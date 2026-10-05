@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { INTERNAL_EDITION } from "@getpaseo/protocol/internal-edition";
 import { parseChangelog, type ChangelogRelease } from "./parse-changelog";
 
 const CHANGELOG_URL = "https://raw.githubusercontent.com/getpaseo/paseo/main/CHANGELOG.md";
@@ -38,6 +39,12 @@ export function useChangelog(enabled: boolean): Changelog {
 
     const controller = new AbortController();
     setState(readCache());
+
+    // Internal edition: the changelog lives on GitHub, so it is never fetched.
+    if (!INTERNAL_EDITION.cloudServicesEnabled) {
+      setState({ status: "error" });
+      return;
+    }
 
     void (async () => {
       try {

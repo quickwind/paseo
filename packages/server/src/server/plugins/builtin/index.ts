@@ -2,7 +2,9 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const builtinPlugins = [
+import { INTERNAL_EDITION } from "@getpaseo/protocol/internal-edition";
+
+const UPSTREAM_BUILTIN_PLUGINS = [
   "antigravity-provider",
   "claude-usage-source",
   "codex-usage-source",
@@ -15,6 +17,12 @@ export const builtinPlugins = [
   "opencode-go-usage-source",
   "zai-usage-source",
 ] as const;
+
+// Internal edition: every bundled plugin is either a provider outside the allowlist or a
+// usage source that calls a vendor API, so none start.
+export const builtinPlugins: readonly string[] = INTERNAL_EDITION.cloudServicesEnabled
+  ? UPSTREAM_BUILTIN_PLUGINS
+  : [];
 
 export function resolveBuiltinPluginsRoot(moduleUrl: string | URL = import.meta.url): string {
   const moduleDir = path.dirname(fileURLToPath(moduleUrl));

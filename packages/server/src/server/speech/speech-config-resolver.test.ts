@@ -105,8 +105,9 @@ describe("resolveSpeechConfig", () => {
       explicit: true,
       enabled: true,
     });
+    // Internal edition: an OpenAI request still resolves to local speech.
     expect(result.speech.providers.voiceStt).toEqual({
-      provider: "openai",
+      provider: "local",
       explicit: true,
       enabled: true,
     });
@@ -129,9 +130,7 @@ describe("resolveSpeechConfig", () => {
       dictation: "es",
       voice: "pt",
     });
-    expect(result.openai?.stt?.apiKey).toBe("persisted-key");
-    expect(result.openai?.tts?.apiKey).toBe("persisted-key");
-    expect(result.openai?.stt?.model).toBe("gpt-4o-transcribe");
+    expect(result.openai).toBeUndefined();
   });
 
   test("resolves STT language from env, settings, and voice-to-dictation fallback", () => {

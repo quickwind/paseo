@@ -3,6 +3,7 @@ import {
   type PluginRegistries,
   type PluginRegistryIdentity,
 } from "@getpaseo/protocol/plugin-registry";
+import { assertPluginSourceLocal } from "./edition.js";
 import type { PluginUpdateTarget } from "@getpaseo/protocol/messages";
 
 export interface RegistryOptions {
@@ -16,6 +17,7 @@ export async function resolveRegistryPlugin(
   options: RegistryOptions,
   install: boolean,
 ) {
+  assertPluginSourceLocal({ kind: "registry", location: identity.url });
   const base = new URL(identity.url);
   if (!["http:", "https:"].includes(base.protocol) || base.username || base.password)
     throw new Error("Registry base must be an HTTP(S) URL without credentials");

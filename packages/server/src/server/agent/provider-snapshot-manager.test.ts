@@ -392,6 +392,7 @@ describe("ProviderSnapshotManager public surface", () => {
       logger: createTestLogger(),
       providerOverrides: {
         claude: { enabled: false },
+        devin: { enabled: false },
         codex: { enabled: false },
         copilot: { enabled: false },
         opencode: { enabled: false },
@@ -418,6 +419,7 @@ describe("ProviderSnapshotManager public surface", () => {
       logger: createTestLogger(),
       providerOverrides: {
         claude: { enabled: false },
+        devin: { enabled: false },
         copilot: { enabled: false },
         opencode: { enabled: false },
         pi: { enabled: false },
@@ -563,6 +565,7 @@ describe("ProviderSnapshotManager public surface", () => {
       refreshTimeoutMs: 1,
       providerOverrides: {
         claude: { enabled: false },
+        devin: { enabled: false },
         copilot: { enabled: false },
         opencode: { enabled: false },
         pi: { enabled: false },
@@ -589,6 +592,7 @@ describe("ProviderSnapshotManager public surface", () => {
       refreshTimeoutMs: 60_000,
       providerOverrides: {
         claude: { enabled: false },
+        devin: { enabled: false },
         copilot: { enabled: false },
         opencode: { enabled: false },
         pi: { enabled: false },
@@ -618,6 +622,7 @@ describe("ProviderSnapshotManager public surface", () => {
       logger: createTestLogger(),
       providerOverrides: {
         claude: { enabled: false },
+        devin: { enabled: false },
         copilot: { enabled: false },
         opencode: { enabled: false },
         pi: { enabled: false },
@@ -813,6 +818,7 @@ describe("ProviderSnapshotManager public surface", () => {
       logger: createTestLogger(),
       providerOverrides: {
         claude: { enabled: false },
+        devin: { enabled: false },
         copilot: { enabled: false },
         opencode: { enabled: false },
         pi: { enabled: false },
@@ -841,6 +847,7 @@ describe("ProviderSnapshotManager public surface", () => {
       refreshTimeoutMs: 5,
       providerOverrides: {
         claude: { enabled: false },
+        devin: { enabled: false },
         copilot: { enabled: false },
         opencode: { enabled: false },
         pi: { enabled: false },
@@ -867,6 +874,7 @@ describe("ProviderSnapshotManager public surface", () => {
       logger: createTestLogger(),
       providerOverrides: {
         claude: { enabled: false },
+        devin: { enabled: false },
         codex: { enabled: false },
         copilot: { enabled: false },
         opencode: { enabled: false },
@@ -876,7 +884,7 @@ describe("ProviderSnapshotManager public surface", () => {
     try {
       const entries = await manager.listProviders({ cwd: "/tmp/project", wait: true });
       const providers = entries.map((entry) => entry.provider).sort();
-      expect(providers).toEqual(["claude", "codex", "copilot", "omp", "opencode", "pi"]);
+      expect(providers).toEqual(["claude", "codex", "copilot", "devin", "omp", "opencode", "pi"]);
       for (const entry of entries) {
         expect(entry.enabled).toBe(false);
         expect(entry.status).toBe("unavailable");
@@ -1370,6 +1378,7 @@ describe("ProviderSnapshotManager public surface", () => {
       logger: createTestLogger(),
       providerOverrides: {
         claude: { enabled: false },
+        devin: { enabled: false },
         copilot: { enabled: false },
         opencode: { enabled: false },
         pi: { enabled: false },
@@ -1429,6 +1438,7 @@ describe("ProviderSnapshotManager public surface", () => {
       logger: createTestLogger(),
       providerOverrides: {
         claude: { enabled: false },
+        devin: { enabled: false },
         codex: { enabled: false },
         copilot: { enabled: false },
         pi: { enabled: false },
@@ -1482,6 +1492,7 @@ describe("ProviderSnapshotManager applyMutableProviderConfig", () => {
       logger: createTestLogger(),
       providerOverrides: {
         claude: { enabled: false },
+        devin: { enabled: false },
         codex: { enabled: false },
         copilot: { enabled: false },
         opencode: { enabled: false },
@@ -1568,6 +1579,7 @@ describe("ProviderSnapshotManager applyMutableProviderConfig", () => {
       logger: createTestLogger(),
       providerOverrides: {
         claude: { enabled: false },
+        devin: { enabled: false },
         codex: { enabled: false },
         copilot: { enabled: false },
         opencode: { enabled: false },
@@ -1666,6 +1678,7 @@ describe("ProviderSnapshotManager applyMutableProviderConfig", () => {
     let calls = 0;
     const config = {
       claude: { enabled: false },
+      devin: { enabled: false },
       codex: { enabled: true },
       copilot: { enabled: false },
       opencode: { enabled: false },
@@ -1862,6 +1875,7 @@ describe("ProviderSnapshotManager lifecycle", () => {
   test("owns every materialized client generation until daemon shutdown", async () => {
     const providerConfig = (label: string) => ({
       claude: { enabled: false },
+      devin: { enabled: false },
       codex: { enabled: true, label },
       copilot: { enabled: false },
       omp: { enabled: false },
@@ -1916,6 +1930,7 @@ describe("ProviderSnapshotManager lifecycle", () => {
       logger: createTestLogger(),
       providerOverrides: {
         claude: { enabled: false },
+        devin: { enabled: false },
         codex: { enabled: false },
         copilot: { enabled: false },
         opencode: { enabled: false },
@@ -1943,6 +1958,7 @@ describe("ProviderSnapshotManager lifecycle", () => {
       logger: createTestLogger(),
       providerOverrides: {
         claude: { enabled: false },
+        devin: { enabled: false },
         codex: { enabled: false },
         copilot: { enabled: false },
         opencode: { enabled: false },
@@ -2142,6 +2158,7 @@ describe("ProviderSnapshotManager cwd routing", () => {
       logger: createTestLogger(),
       providerOverrides: {
         claude: { enabled: false },
+        devin: { enabled: false },
         codex: { enabled: false },
         copilot: { enabled: false },
         opencode: { enabled: false },
@@ -2169,6 +2186,7 @@ describe("ProviderSnapshotManager cwd routing", () => {
       logger: createTestLogger(),
       providerOverrides: {
         claude: { enabled: false },
+        devin: { enabled: false },
         codex: { enabled: false },
         copilot: { enabled: false },
         opencode: { enabled: false },
@@ -2251,6 +2269,7 @@ describe("ProviderSnapshotManager cwd routing", () => {
         providerOverrides: {
           codex: { enabled: false },
           claude: { enabled: false },
+          devin: { enabled: false },
           copilot: { enabled: false },
           opencode: { enabled: false },
           pi: { enabled: false },
@@ -2387,6 +2406,7 @@ describe("provider-owned catalogue identity", () => {
   const disabledProviders = {
     codex: { enabled: false },
     claude: { enabled: false },
+    devin: { enabled: false },
     copilot: { enabled: false },
     opencode: { enabled: false },
     pi: { enabled: false },
@@ -2928,6 +2948,7 @@ test("an unchanged provider publishes a pending key failure after an unrelated c
   const config = {
     codex: { enabled: true },
     claude: { enabled: false },
+    devin: { enabled: false },
     copilot: { enabled: false },
     opencode: { enabled: false },
     pi: { enabled: false },
@@ -3220,7 +3241,7 @@ test("result identity covers content, metadata and status while unchanged refres
 });
 
 const PUBLICATION_PROVIDERS = Object.fromEntries(
-  ["claude", "codex", "copilot", "opencode", "pi", "omp"].map((provider) => [
+  ["claude", "devin", "codex", "copilot", "opencode", "pi", "omp"].map((provider) => [
     provider,
     { enabled: provider === "codex" },
   ]),

@@ -52,6 +52,10 @@ const mockState = vi.hoisted(() => {
         providerId?: string;
         label?: string;
       }>,
+      devin: [] as Array<{
+        command: string[];
+        env?: Record<string, string>;
+      }>,
     },
     isCommandAvailable: vi.fn(async (_command: string) => false),
     runtimeModels: new Map<string, AgentModelDefinition[]>(),
@@ -66,6 +70,7 @@ const mockState = vi.hoisted(() => {
       this.constructorArgs.kimi = [];
       this.constructorArgs.pi = [];
       this.constructorArgs.genericAcp = [];
+      this.constructorArgs.devin = [];
       this.isCommandAvailable.mockReset();
       this.isCommandAvailable.mockImplementation(async (_command: string) => false);
       this.runtimeModels.clear();
@@ -317,6 +322,10 @@ vi.mock("./providers/generic-acp-agent.js", () => ({
         },
         env: options.env,
       };
+      if (options.providerId === "devin") {
+        mockState.constructorArgs.devin.push({ command: options.command, env: options.env });
+        return;
+      }
       mockState.constructorArgs.genericAcp.push({
         command: options.command,
         env: options.env,
@@ -668,6 +677,33 @@ test("built-in OMP override keeps the real OMP adapter enabled and launchable", 
     "yolo",
   ]);
   await session.close();
+});
+
+test("built-in devin provider launches devin acp through the generic ACP client", () => {
+  const registry = buildProviderRegistry(logger, {
+    providerOverrides: {
+      devin: { command: ["/opt/devin/bin/devin", "acp"], env: { DEVIN_LOG: "debug" } },
+    },
+  });
+
+  expect(registry.devin.label).toBe("Devin CLI");
+  expect(registry.devin.createClient(logger).provider).toBe("devin");
+  expect(mockState.constructorArgs.devin.at(-1)).toEqual({
+    command: ["/opt/devin/bin/devin", "acp"],
+    env: { DEVIN_LOG: "debug" },
+  });
+});
+
+test("allowedProviderIds leaves built-in and custom providers outside the list out", () => {
+  const registry = buildProviderRegistry(logger, {
+    allowedProviderIds: ["claude", "devin"],
+    providerOverrides: {
+      "my-agent": { extends: "acp", label: "My Agent", command: ["my-agent", "--acp"] },
+      "claude-profile": { extends: "claude", label: "Claude Profile" },
+    },
+  });
+
+  expect(Object.keys(registry).sort()).toEqual(["claude", "devin"]);
 });
 
 test("new provider extending acp uses GenericACPAgentClient", () => {

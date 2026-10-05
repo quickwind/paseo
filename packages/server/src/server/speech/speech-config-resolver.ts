@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { INTERNAL_EDITION } from "@getpaseo/protocol/internal-edition";
 
 import type { PersistedConfig } from "../persisted-config.js";
 import type { PaseoOpenAIConfig, PaseoSpeechConfig } from "../bootstrap.js";
@@ -143,6 +144,16 @@ function resolveRequestedSpeechProviders(params: {
   };
 }
 
+// Internal edition: speech never leaves the machine, whatever the config asks for.
+function forceLocalSpeechProviders(providers: RequestedSpeechProviders): RequestedSpeechProviders {
+  return {
+    dictationStt: { ...providers.dictationStt, provider: "local" },
+    voiceTurnDetection: { ...providers.voiceTurnDetection, provider: "local" },
+    voiceStt: { ...providers.voiceStt, provider: "local" },
+    voiceTts: { ...providers.voiceTts, provider: "local" },
+  };
+}
+
 export function resolveSpeechConfig(params: {
   paseoHome: string;
   env: NodeJS.ProcessEnv;
@@ -151,10 +162,13 @@ export function resolveSpeechConfig(params: {
   openai: PaseoOpenAIConfig | undefined;
   speech: PaseoSpeechConfig;
 } {
-  const providers = resolveRequestedSpeechProviders({
+  const requested = resolveRequestedSpeechProviders({
     env: params.env,
     persisted: params.persisted,
   });
+  const providers = INTERNAL_EDITION.cloudServicesEnabled
+    ? requested
+    : forceLocalSpeechProviders(requested);
 
   const local = resolveLocalSpeechConfig({
     paseoHome: params.paseoHome,
@@ -163,11 +177,13 @@ export function resolveSpeechConfig(params: {
     providers,
   });
 
-  const openai = resolveOpenAiSpeechConfig({
-    env: params.env,
-    persisted: params.persisted,
-    providers,
-  });
+  const openai = INTERNAL_EDITION.cloudServicesEnabled
+    ? resolveOpenAiSpeechConfig({
+        env: params.env,
+        persisted: params.persisted,
+        providers,
+      })
+    : undefined;
 
   return {
     openai,

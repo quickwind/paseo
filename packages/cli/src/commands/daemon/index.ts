@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import { INTERNAL_EDITION } from "@getpaseo/protocol/internal-edition";
 import { startCommand, daemonRunCommand } from "./start.js";
 import { daemonStatusCommand } from "./status.js";
 import { daemonStopCommand } from "./stop.js";
@@ -19,7 +20,7 @@ export function createDaemonCommand(): Command {
     daemonStopCommand(),
     daemonRestartCommand(),
     daemonReloadCommand(),
-    pairCommand(),
+    ...(INTERNAL_EDITION.pairingEnabled ? [pairCommand()] : []),
     daemonConfigCommand(),
   ])
     daemon.addCommand(command);

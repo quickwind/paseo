@@ -77,14 +77,9 @@ describe("checkForAppUpdate", () => {
     consoleError.mockRestore();
   });
 
-  it("keeps genuine updater failures visible", async () => {
-    const error = new Error("network down");
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    autoUpdaterMock.checkForUpdates.mockImplementationOnce(async () => {
-      autoUpdaterMock.logger.error(error);
-      autoUpdaterMock.handlers.get("error")?.(error);
-      throw error;
-    });
+  // Internal edition: packaged builds still never reach the public release feed.
+  it("never contacts the update feed", async () => {
+    autoUpdaterMock.checkForUpdates.mockClear();
 
     const result = await checkForAppUpdate({
       currentVersion: "1.2.3",
@@ -92,9 +87,8 @@ describe("checkForAppUpdate", () => {
       intent: "manual",
     });
 
-    expect(result.errorMessage).toBe("network down");
-    expect(consoleError).toHaveBeenCalled();
-    consoleError.mockRestore();
+    expect(autoUpdaterMock.checkForUpdates).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ hasUpdate: false, readyToInstall: false, errorMessage: null });
   });
 
   it("logs the update handoff with current and selected target versions", () => {

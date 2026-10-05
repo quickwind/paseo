@@ -3,6 +3,7 @@ import {
   parsePluginRegistryReference,
 } from "@getpaseo/protocol/plugin-registry";
 import { resolveRegistryPlugin, type RegistryOptions } from "./managed-source/registry.js";
+import { assertPluginSourceLocal } from "./managed-source/edition.js";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, realpath, rename, rm } from "node:fs/promises";
@@ -487,6 +488,7 @@ function assertPluginPath(checkoutRoot: string, directory: string): void {
 }
 
 async function clone(remote: string, checkoutRoot: string): Promise<void> {
+  assertPluginSourceLocal({ kind: "git", location: remote });
   const publicRemote = redactRemoteCredentials(remote);
   const cloneRemote = publicRemote === remote ? remote : "https://paseo.invalid/plugin.git";
   const envOverlay =
@@ -558,6 +560,7 @@ async function resolveRequestedRef(
   return revParse(checkoutRoot, `${requestedRef}^{commit}`);
 }
 async function resolveRemoteCommit(remote: string, cwd: string, ref?: string): Promise<string> {
+  assertPluginSourceLocal({ kind: "git", location: remote });
   if (ref?.startsWith("-")) throw new Error("Plugin Git ref cannot start with '-'");
   if (ref && /^[0-9a-f]{40,64}$/.test(ref)) return ref;
   const publicRemote = redactRemoteCredentials(remote);

@@ -1,5 +1,6 @@
 import { WebSocket } from "ws";
 import { z } from "zod";
+import { CloudServiceDisabledError } from "@getpaseo/protocol/internal-edition";
 import type { WebSocketLike } from "../websocket-server.js";
 
 export interface HubEnrollment {
@@ -219,5 +220,25 @@ export class DirectHubRelationshipRemote implements HubRelationshipRemote {
     } finally {
       clearTimeout(timeout);
     }
+  }
+}
+
+/**
+ * Internal edition remote: the Hub is a cloud service, so enrollment fails, an existing
+ * relationship never connects, and revocation only clears local state.
+ */
+export class DisabledHubRelationshipRemote implements HubRelationshipRemote {
+  async enroll(): Promise<HubEnrollmentResult> {
+    throw new CloudServiceDisabledError("Paseo Hub");
+  }
+
+  async updatePermissions(): Promise<{ permissions: string[] }> {
+    throw new CloudServiceDisabledError("Paseo Hub");
+  }
+
+  async revoke(): Promise<void> {}
+
+  openSocket(): HubSocketConnection {
+    return { close() {} };
   }
 }

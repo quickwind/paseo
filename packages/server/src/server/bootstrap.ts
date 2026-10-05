@@ -170,6 +170,7 @@ import { createConfiguredTerminalManager } from "../terminal/terminal-manager-fa
 import { applyTerminalAgentHookSetting } from "../terminal/agent-hooks/terminal-agent-hook-setting.js";
 import { loadOrCreateDaemonKeyPair } from "./daemon-keypair.js";
 import { createRelayRuntime, type RelayRuntime } from "./relay-runtime.js";
+import { INTERNAL_EDITION } from "@getpaseo/protocol/internal-edition";
 import type { PushNotificationSender } from "./push/index.js";
 import { getOrCreateServerId } from "./server-id.js";
 import { resolveDaemonVersion } from "./daemon-version.js";
@@ -228,6 +229,7 @@ import {
 } from "./hub/relationship-controller.js";
 import {
   DirectHubRelationshipRemote,
+  DisabledHubRelationshipRemote,
   type HubRelationshipRemote,
 } from "./hub/relationship-remote.js";
 import { DaemonExecutions } from "./hub/daemon-executions.js";
@@ -418,6 +420,8 @@ export interface PaseoDaemonConfig {
   staticDir: string;
   mcpDebug: boolean;
   isDev?: boolean;
+  /** Internal edition provider allowlist. Unset means every registered provider. */
+  allowedProviderIds?: readonly string[];
   agentClients: Partial<Record<AgentProvider, AgentClient>>;
   agentStoragePath: string;
   relayEnabled?: boolean;
@@ -531,6 +535,18 @@ function mountWebUi(app: express.Application, config: PaseoDaemonConfig, logger:
       logger,
     }),
   );
+}
+
+function resolveHubRelationshipRemote(
+  dependencies: PaseoDaemonDependencies,
+): HubRelationshipRemote {
+  if (dependencies.hubRelationshipRemote) {
+    return dependencies.hubRelationshipRemote;
+  }
+  // Internal edition: the Hub is a cloud service.
+  return INTERNAL_EDITION.cloudServicesEnabled
+    ? new DirectHubRelationshipRemote()
+    : new DisabledHubRelationshipRemote();
 }
 
 function resolveExpressTrustProxySetting(config: PaseoDaemonConfig): true | string[] {
@@ -928,6 +944,7 @@ export async function createPaseoDaemon(
       workspaceGitService,
       managedProcesses,
       isDev: config.isDev === true,
+      allowedProviderIds: config.allowedProviderIds,
       extraClients: config.agentClients,
     },
   });
@@ -1250,7 +1267,7 @@ export async function createPaseoDaemon(
     serverId,
     daemonPublicKey: daemonKeyPair.publicKeyB64,
     logger,
-    remote: dependencies.hubRelationshipRemote ?? new DirectHubRelationshipRemote(),
+    remote: resolveHubRelationshipRemote(dependencies),
     clock: dependencies.hubRelationshipClock,
     retryPolicy: dependencies.hubRelationshipRetryPolicy,
     createDaemonId: dependencies.createHubDaemonId,

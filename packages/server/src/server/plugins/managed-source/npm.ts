@@ -1,4 +1,5 @@
 import compareVersions from "semver/functions/compare.js";
+import { assertPluginSourceLocal } from "./edition.js";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
@@ -41,6 +42,7 @@ function parseNpmSource(source: string): { packageName: string; requestedSpec: s
 }
 
 export async function acquireNpm(source: string, installRoot: string, target?: NpmArtifact) {
+  assertPluginSourceLocal({ kind: "npm" });
   const { packageName, requestedSpec } = parseNpmSource(source);
   await writeFile(
     path.join(installRoot, "package.json"),
@@ -125,6 +127,7 @@ export async function resolveNpm(
   selector: string,
   cwd: string,
 ): Promise<NpmArtifact> {
+  assertPluginSourceLocal({ kind: "npm" });
   // Validate selectors using the same grammar as installation; never interpret an update as another source.
   parseNpmSource(`npm:${packageName}@${selector}`);
   const { stdout } = await execCommand(

@@ -26,6 +26,9 @@ import { openExternalUrl } from "@/utils/open-external-url";
 import { isFdroidBuild } from "@/constants/build-profile";
 import { isWeb, isNative } from "@/constants/platform";
 import { isElectronRuntime } from "@/desktop/host";
+import { INTERNAL_EDITION } from "@getpaseo/protocol/internal-edition";
+
+const PAIRING_ACTION_KEYS = new Set(["scan-qr", "paste-pairing-link"]);
 
 interface WelcomeAction {
   key: "scan-qr" | "direct-connection" | "remote-ssh" | "paste-pairing-link";
@@ -214,7 +217,7 @@ export function WelcomeScreen({ onHostAdded }: WelcomeScreenProps) {
     [onHostAdded, finishOnboarding],
   );
 
-  const actions: WelcomeAction[] =
+  const allActions: WelcomeAction[] =
     isWeb || isFdroidBuild
       ? [
           {
@@ -260,6 +263,13 @@ export function WelcomeScreen({ onHostAdded }: WelcomeScreenProps) {
             onPress: handleOpenPasteLink,
           },
         ];
+
+  const actions = INTERNAL_EDITION.pairingEnabled
+    ? allActions
+    : allActions.filter((action) => !PAIRING_ACTION_KEYS.has(action.key));
+  if (actions[0]) {
+    actions[0] = { ...actions[0], primary: true };
+  }
 
   if (isElectronRuntime()) {
     actions.splice(1, 0, {

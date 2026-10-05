@@ -4,6 +4,7 @@ import path from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type pino from "pino";
+import { CloudServiceDisabledError, INTERNAL_EDITION } from "@getpaseo/protocol/internal-edition";
 
 import { getSherpaOnnxModelSpec, type SherpaOnnxModelId } from "./model-catalog.js";
 import { spawnProcess } from "../../../../../utils/spawn.js";
@@ -46,6 +47,10 @@ interface DownloadToFileOptions {
 
 async function downloadToFile(options: DownloadToFileOptions): Promise<void> {
   const { url, outputPath } = options;
+  if (!INTERNAL_EDITION.cloudServicesEnabled) {
+    // Internal edition: provision speech models into the models directory ahead of time.
+    throw new CloudServiceDisabledError(`Downloading speech model from ${url}`);
+  }
   const res = await fetch(url, { signal: options.signal });
   if (!res.ok) {
     throw new Error(`Failed to download ${url}: ${res.status} ${res.statusText}`);

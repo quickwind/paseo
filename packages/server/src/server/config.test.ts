@@ -101,21 +101,10 @@ describe("server config", () => {
       ],
     },
     {
+      // Internal edition: OpenAI speech is forced to local, so only local settings apply.
       name: "OpenAI speech providers",
       providers: { dictation: "openai", voiceStt: "openai", voiceTts: "openai" },
       expected: [
-        "features.dictation.stt.confidenceThreshold",
-        "features.dictation.stt.model",
-        "features.voiceMode.stt.model",
-        "features.voiceMode.tts.model",
-        "features.voiceMode.tts.voice",
-      ],
-    },
-    {
-      name: "mixed local and OpenAI speech providers",
-      providers: { dictation: "local", voiceStt: "openai", voiceTts: "local" },
-      expected: [
-        "features.dictation.stt.confidenceThreshold",
         "features.dictation.stt.model",
         "features.voiceMode.stt.model",
         "features.voiceMode.tts.model",
@@ -216,7 +205,8 @@ test("loads private plugin registry settings through the configuration boundary"
       path.join(home, "config.json"),
       JSON.stringify({ pluginRegistries, pluginRegistryEnabled: true }),
     );
-    expect(loadConfig(home, { env: {} }).pluginRegistryEnabled).toBe(true);
+    // Internal edition: the plugin registry stays off even when config enables it.
+    expect(loadConfig(home, { env: {} }).pluginRegistryEnabled).toBe(false);
     expect(
       loadConfig(home, { env: { PASEO_PLUGIN_REGISTRY_ENABLED: "false" } }).pluginRegistryEnabled,
     ).toBe(false);

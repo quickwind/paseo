@@ -1,4 +1,5 @@
 import { addLocalDaemonOptions } from "../utils/command-options.js";
+import { INTERNAL_EDITION } from "@getpaseo/protocol/internal-edition";
 import { cancel, confirm, intro, isCancel, log, note, outro } from "@clack/prompts";
 import { Command, Option } from "commander";
 import path from "node:path";
@@ -117,10 +118,17 @@ function printNextSteps(pairingUrl: string | null, paseoHome: string, richUi: bo
     pairingUrl
       ? "1. Open Paseo and scan the QR code above, or paste the pairing link."
       : "1. Open Paseo and connect to your daemon.",
-    "2. Web app: https://app.paseo.sh",
-    "3. Desktop app: https://github.com/getpaseo/paseo/releases/latest",
-    "4. Docs: https://paseo.sh/docs",
-    `5. Example: paseo run --home ${JSON.stringify(paseoHome)} --output-schema schema.json "extract fields"`,
+    // Internal edition: point at nothing hosted outside the company.
+    ...(INTERNAL_EDITION.cloudServicesEnabled
+      ? [
+          "2. Web app: https://app.paseo.sh",
+          "3. Desktop app: https://github.com/getpaseo/paseo/releases/latest",
+          "4. Docs: https://paseo.sh/docs",
+          `5. Example: paseo run --home ${JSON.stringify(paseoHome)} --output-schema schema.json "extract fields"`,
+        ]
+      : [
+          `2. Example: paseo run --home ${JSON.stringify(paseoHome)} --output-schema schema.json "extract fields"`,
+        ]),
   ];
   const quickReferenceLines = [
     "1. paseo --help",
@@ -271,6 +279,12 @@ export async function runOnboard(options: OnboardOptions): Promise<void> {
   }
   const ready = await waitForDaemonReady(paseoHome, { timeoutMs });
   log.message(`Daemon ready on ${ready.listen}`);
+
+  if (!INTERNAL_EDITION.pairingEnabled) {
+    printNextSteps(null, paseoHome, richUi);
+    if (richUi) outro("Paseo daemon is running.");
+    return;
+  }
 
   if (options.relay === false) {
     log.message("Relay pairing skipped because --no-relay was provided.");

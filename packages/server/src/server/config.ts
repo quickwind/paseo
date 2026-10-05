@@ -22,6 +22,11 @@ import { ProviderOverrideSchema } from "./agent/provider-launch-config.js";
 import { AgentProviderSchema } from "@getpaseo/protocol/provider-manifest";
 import { hashDaemonPassword } from "./auth.js";
 import { resolveSpeechConfig } from "./speech/speech-config-resolver.js";
+import {
+  INTERNAL_EDITION,
+  INTERNAL_EDITION_ALLOWED_PROVIDER_IDS,
+} from "@getpaseo/protocol/internal-edition";
+import { assertEditionListen } from "./internal-edition.js";
 import type { RequestedSpeechProviders } from "./speech/speech-types.js";
 import { mergeHostnames, parseHostnamesEnv, type HostnamesConfig } from "./hostnames.js";
 import { resolveGitProcessPolicy } from "../utils/git-process-scheduler.js";
@@ -297,6 +302,14 @@ function resolveTlsFromEnv(
   return persistedValue ?? fallback;
 }
 
+// Internal edition: the relay is a cloud service, so it stays off and cannot be toggled.
+function applyEditionRelayLock(relay: ResolvedRelay): ResolvedRelay {
+  if (INTERNAL_EDITION.pairingEnabled) {
+    return relay;
+  }
+  return { ...relay, enabled: false, enabledMutable: false };
+}
+
 function resolveRelayConfig(input: ResolveRelayInput): ResolvedRelay {
   const environmentEnabled = parseBooleanEnv(input.env.PASEO_RELAY_ENABLED);
   // COMPAT(relayOptInDefault): daemons whose startup config omitted this field
@@ -363,16 +376,21 @@ function resolveServiceProxyConfig(
   // `enabled=false` used to disable the separate service proxy listener. Localhost
   // service proxying is now always enabled; this only suppresses optional layers.
   const optionalLayersEnabled = enabledShim !== false;
-  const publicBaseUrl = optionalLayersEnabled
-    ? resolveServiceProxyPublicBaseUrl(
-        env.PASEO_SERVICE_PROXY_PUBLIC_BASE_URL ??
-          persisted.daemon?.serviceProxy?.publicBaseUrl ??
-          null,
-      )
-    : null;
+  // Internal edition: workspace services are never published at a public URL.
+  const publicBaseUrl =
+    optionalLayersEnabled && INTERNAL_EDITION.cloudServicesEnabled
+      ? resolveServiceProxyPublicBaseUrl(
+          env.PASEO_SERVICE_PROXY_PUBLIC_BASE_URL ??
+            persisted.daemon?.serviceProxy?.publicBaseUrl ??
+            null,
+        )
+      : null;
   const standaloneListen = optionalLayersEnabled
     ? (env.PASEO_SERVICE_PROXY_LISTEN ?? persisted.daemon?.serviceProxy?.listen ?? null)
     : null;
+  if (standaloneListen) {
+    assertEditionListen(standaloneListen, "daemon.serviceProxy.listen");
+  }
 
   return { publicBaseUrl, standaloneListen };
 }
@@ -570,6 +588,7 @@ export function resolveConfigFromPersisted(
     resolvedOptions.relayEnabledFallback ?? persisted.daemon?.relay?.enabled === undefined;
 
   const listen = resolveListenAddress(env, cli, persisted);
+  assertEditionListen(listen, "daemon.listen");
   const {
     mcpEnabled,
     mcpInjectIntoAgents,
@@ -583,13 +602,15 @@ export function resolveConfigFromPersisted(
     appBaseUrl,
   } = resolveStaticLoadConfigSettings(env, cli, persisted);
 
-  const relay = resolveRelayConfig({
-    env,
-    persisted,
-    cliRelayEnabled: cli?.relayEnabled,
-    cliRelayUseTls: cli?.relayUseTls,
-    enabledFallback: relayEnabledFallback,
-  });
+  const relay = applyEditionRelayLock(
+    resolveRelayConfig({
+      env,
+      persisted,
+      cliRelayEnabled: cli?.relayEnabled,
+      cliRelayUseTls: cli?.relayUseTls,
+      enabledFallback: relayEnabledFallback,
+    }),
+  );
   const serviceProxy = resolveServiceProxyConfig(env, persisted);
   const webUi = resolveWebUiConfig(paseoHome, env, cli, persisted);
 
@@ -629,11 +650,13 @@ export function resolveConfigFromPersisted(
     pluginRegistries: persisted.pluginRegistries,
     pluginRegistryUrl: env.PASEO_PLUGIN_REGISTRY,
     pluginRegistryEnabled:
-      parseBooleanEnv(env.PASEO_PLUGIN_REGISTRY_ENABLED) ??
-      persisted.pluginRegistryEnabled ??
-      false,
+      INTERNAL_EDITION.cloudServicesEnabled &&
+      (parseBooleanEnv(env.PASEO_PLUGIN_REGISTRY_ENABLED) ??
+        persisted.pluginRegistryEnabled ??
+        false),
     mcpDebug: env.MCP_DEBUG === "1",
     isDev: resolvePaseoNodeEnv(env) === "development",
+    allowedProviderIds: INTERNAL_EDITION_ALLOWED_PROVIDER_IDS,
     agentStoragePath: path.join(paseoHome, "agents"),
     staticDir: "public",
     agentClients: {},

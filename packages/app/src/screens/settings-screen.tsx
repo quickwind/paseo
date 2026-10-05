@@ -134,6 +134,7 @@ import {
 import { useLastWorkspaceSelection } from "@/stores/navigation-active-workspace-store";
 import { returnFromSettings, type SettingsView } from "@/navigation/settings-navigation";
 import { isNative, isWeb } from "@/constants/platform";
+import { INTERNAL_EDITION } from "@getpaseo/protocol/internal-edition";
 
 // ---------------------------------------------------------------------------
 // View model
@@ -230,7 +231,15 @@ const HOST_SECTION_ITEMS: HostSectionItem[] = [
   { id: "host", labelKey: "settings.hostSections.host", icon: Server },
   { id: "projects", labelKey: "settings.hostSections.projects", icon: FolderGit2 },
   { id: "connections", labelKey: "settings.hostSections.connections", icon: Network },
-  { id: "pair-device", labelKey: "openProject.tiles.pairDevice.title", icon: Smartphone },
+  ...(INTERNAL_EDITION.pairingEnabled
+    ? [
+        {
+          id: "pair-device",
+          labelKey: "openProject.tiles.pairDevice.title",
+          icon: Smartphone,
+        } satisfies HostSectionItem,
+      ]
+    : []),
   { id: "agents", labelKey: "settings.hostSections.agents", icon: Bot },
   { id: "metadata", labelKey: "settings.hostSections.metadata", icon: Sparkles },
   { id: "workspaces", labelKey: "settings.hostSections.workspaces", icon: FolderGit2 },
@@ -250,7 +259,9 @@ function renderHostSettingsContent(
     case "connections":
       return <HostConnectionsPage serverId={view.serverId} />;
     case "pair-device":
-      return <HostPairDevicePage serverId={view.serverId} />;
+      return INTERNAL_EDITION.pairingEnabled ? (
+        <HostPairDevicePage serverId={view.serverId} />
+      ) : null;
     case "agents":
       return <HostAgentsPage serverId={view.serverId} />;
     case "metadata":
@@ -463,8 +474,8 @@ function AboutSection({ appVersion, appVersionText, isDesktopApp }: AboutSection
             </View>
             <Text style={styles.aboutValue}>{appVersionText}</Text>
           </View>
-          <WhatsNewRow />
-          {isDesktopApp ? <DesktopAppUpdateRow /> : null}
+          {INTERNAL_EDITION.cloudServicesEnabled ? <WhatsNewRow /> : null}
+          {isDesktopApp && INTERNAL_EDITION.cloudServicesEnabled ? <DesktopAppUpdateRow /> : null}
         </View>
       </SettingsSection>
       <ConnectedHostsSection clientVersion={appVersion} />

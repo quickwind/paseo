@@ -208,6 +208,14 @@ export const AGENT_PROVIDER_DEFINITIONS: AgentProviderDefinition[] = [
     },
   },
   {
+    id: "devin",
+    label: "Devin CLI",
+    description: "Cognition's Devin for Terminal via Agent Client Protocol",
+    // Devin reports its modes over ACP at session start.
+    defaultModeId: null,
+    modes: [],
+  },
+  {
     id: "codex",
     label: "Codex",
     description: "OpenAI's Codex workspace agent with sandbox controls and optional network access",

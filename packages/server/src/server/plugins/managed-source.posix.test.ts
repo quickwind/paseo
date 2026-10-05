@@ -36,25 +36,6 @@ async function commitAll(repository: string, message: string): Promise<string> {
   return stdout.trim();
 }
 
-/** Points https://github.com/fixture/repository.git at a local repository for the callback. */
-async function withGitHubFixture(repository: string, run: () => Promise<void>): Promise<void> {
-  const overlay = {
-    GIT_CONFIG_COUNT: "1",
-    GIT_CONFIG_KEY_0: `url.${pathToFileURL(repository).href}.insteadOf`,
-    GIT_CONFIG_VALUE_0: "https://github.com/fixture/repository.git",
-  };
-  const previous = Object.fromEntries(Object.keys(overlay).map((key) => [key, process.env[key]]));
-  Object.assign(process.env, overlay);
-  try {
-    await run();
-  } finally {
-    for (const [key, value] of Object.entries(previous)) {
-      if (value === undefined) delete process.env[key];
-      else process.env[key] = value;
-    }
-  }
-}
-
 describe("managed Git plugin sources", () => {
   it("does not expose Git URL credentials when cloning fails", async () => {
     const home = await mkdtemp(path.join(tmpdir(), "paseo-plugin-git-home-"));
@@ -67,22 +48,17 @@ describe("managed Git plugin sources", () => {
     await expect(failure).rejects.not.toThrow(/oauth2|super-secret/);
   });
 
-  it("normalizes explicit GitHub and Git identifiers to the same Git source", async () => {
-    const repository = await createRepository();
+  // Internal edition: GitHub and other network Git remotes are refused; file: remotes still work.
+  it("refuses GitHub and network Git sources", async () => {
     const home = await mkdtemp(path.join(tmpdir(), "paseo-plugin-github-home-"));
     roots.push(home);
-    await withGitHubFixture(repository, async () => {
-      const sources = new ManagedPluginSources(home);
-      for (const source of ["github:fixture/repository", "git:fixture/repository"]) {
-        const candidate = await sources.prepareInstall({ source });
-        expect(candidate.record).toMatchObject({
-          kind: "git",
-          remote: "https://github.com/fixture/repository.git",
-        });
-        await sources.discard(candidate);
-      }
-    });
-  }, 30_000);
+    const sources = new ManagedPluginSources(home);
+    for (const source of ["github:fixture/repository", "git:https://git.example.com/repo.git"]) {
+      await expect(sources.prepareInstall({ source })).rejects.toThrow(
+        "Installing plugins from a remote git is disabled",
+      );
+    }
+  });
 
   it("offers current default HEAD after installing a tag", async () => {
     const repository = await createRepository();
@@ -280,8 +256,7 @@ describe("managed Git plugin sources", () => {
 });
 
 describe("registry plugin sources", () => {
-  it("treats owner/repository as GitHub shorthand without contacting the registry while registry installs are off", async () => {
-    const repository = await createRepository();
+  it("refuses owner/repository GitHub shorthand without contacting the registry", async () => {
     const home = await mkdtemp(path.join(tmpdir(), "paseo-registry-off-home-"));
     roots.push(home);
     const requests: Array<string | undefined> = [];
@@ -294,22 +269,17 @@ describe("registry plugin sources", () => {
     const address = server.address();
     if (!address || typeof address === "string") throw new Error("Missing registry address");
     try {
-      await withGitHubFixture(repository, async () => {
-        const sources = new ManagedPluginSources(home, {
-          defaultUrl: `http://127.0.0.1:${address.port}`,
-        });
-        const candidate = await sources.prepareInstall({ source: "fixture/repository" });
-        expect(candidate.record).toEqual({
-          kind: "git",
-          remote: "https://github.com/fixture/repository.git",
-        });
-        await sources.discard(candidate);
+      const sources = new ManagedPluginSources(home, {
+        defaultUrl: `http://127.0.0.1:${address.port}`,
       });
+      await expect(sources.prepareInstall({ source: "fixture/repository" })).rejects.toThrow(
+        "Installing plugins from a remote git is disabled",
+      );
       expect(requests).toEqual([]);
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
-  }, 30_000);
+  });
 
   it("installs a bare id from a private registry and polls its pin without install intent", async () => {
     const repository = await createRepository();
@@ -410,19 +380,11 @@ describe("registry plugin sources", () => {
   });
 });
 
-it("installs and updates only the npm artifacts pinned by the plugin registry", async () => {
-  const { startNpmRegistry, npmPluginPackages } =
-    await import("../../../../../scripts/test-support/npm-registry.mjs");
-  const { resolveNpm } = await import("./managed-source/npm.js");
-  const npm = await startNpmRegistry(npmPluginPackages());
-  const previous = process.env.npm_config_userconfig;
-  process.env.npm_config_userconfig = npm.userconfig;
+// Internal edition: a registry that pins an npm artifact still cannot install it.
+it("refuses npm artifacts pinned by a plugin registry", async () => {
   const home = await mkdtemp(path.join(tmpdir(), "paseo-registry-npm-"));
   roots.push(home);
-  const intents: Array<string | string[] | undefined> = [];
-  let pin = await resolveNpm("paseo-fixture-plugin", "1.0.0", home);
-  const server = createServer((request, response) => {
-    intents.push(request.headers["x-paseo-install"]);
+  const server = createServer((_request, response) => {
     response.end(
       JSON.stringify({
         id: "acme/example",
@@ -431,7 +393,13 @@ it("installs and updates only the npm artifacts pinned by the plugin registry", 
         categories: [],
         author: { github: "acme" },
         repository: { url: "https://github.com/acme/example" },
-        artifact: { kind: "npm", package: "paseo-fixture-plugin", ...pin },
+        artifact: {
+          kind: "npm",
+          package: "paseo-fixture-plugin",
+          version: "1.0.0",
+          resolved: "http://127.0.0.1/paseo-fixture-plugin-1.0.0.tgz",
+          integrity: "sha512-fixture",
+        },
         screenshots: [],
         submittedAt: "2026-10-03",
         reviewedAt: "2026-10-03",
@@ -444,38 +412,15 @@ it("installs and updates only the npm artifacts pinned by the plugin registry", 
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("Missing registry address");
-  const options = { enabled: true, defaultUrl: `http://127.0.0.1:${address.port}` };
   try {
-    const sources = new ManagedPluginSources(home, options);
-    const candidate = await sources.place(
-      "example",
-      await sources.prepareInstall({ source: "acme/example" }),
-    );
-    await sources.verifyCandidate("example", candidate);
-    sources.commit("example", candidate.record);
-    expect((await sources.describe("example", candidate.directory)).currentRevision).toBe("1.0.0");
-    expect((await sources.preview("example", candidate.directory)).outcome).toBe("current");
-    pin = await resolveNpm("paseo-fixture-plugin", "1.1.0", home);
-    const restarted = new ManagedPluginSources(home, options);
-    const preview = await restarted.preview("example", candidate.directory);
-    expect(preview.target).toEqual({ kind: "npm", ...pin });
-    expect(preview.outcome).toBe("update");
-    const updated = await restarted.place(
-      "example",
-      await restarted.prepareUpdate(preview.proposal!, candidate.directory),
-    );
-    await restarted.verifyCandidate("example", updated);
-    expect(updated.record.registry).toEqual({ url: options.defaultUrl, id: "acme/example" });
-    expect(intents).toEqual(["1", undefined, undefined, undefined]);
-    pin = { ...pin, integrity: "sha512-YWJj" };
+    const sources = new ManagedPluginSources(home, {
+      enabled: true,
+      defaultUrl: `http://127.0.0.1:${address.port}`,
+    });
     await expect(sources.prepareInstall({ source: "acme/example" })).rejects.toThrow(
-      "changed since review",
+      "Installing plugins from npm is disabled",
     );
   } finally {
-    server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
-    await npm.close();
-    if (previous === undefined) delete process.env.npm_config_userconfig;
-    else process.env.npm_config_userconfig = previous;
   }
-}, 30_000);
+});

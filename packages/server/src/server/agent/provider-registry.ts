@@ -109,6 +109,8 @@ export interface BuildProviderRegistryOptions {
   workspaceGitService?: Pick<WorkspaceGitService, "resolveRepoRoot">;
   managedProcesses?: ManagedProcessRegistry;
   isDev?: boolean;
+  /** Internal edition allowlist; providers outside it are left out of the registry. */
+  allowedProviderIds?: readonly string[];
   ompRuntime?: OmpRuntime;
   openCodeBridge?: OpenCodeBridge;
 }
@@ -204,8 +206,16 @@ const PROVIDER_CLIENT_FACTORIES: Record<string, ProviderClientFactory> = {
   cursor: (logger, runtimeSettings) =>
     new CursorACPAgentClient({
       logger,
-      command: getCursorACPCommand(runtimeSettings),
+      command: getACPCommand(runtimeSettings, ["cursor-agent", "acp"]),
       env: runtimeSettings?.env,
+    }),
+  devin: (logger, runtimeSettings) =>
+    new GenericACPAgentClient({
+      logger,
+      command: getACPCommand(runtimeSettings, ["devin", "acp"]),
+      env: runtimeSettings?.env,
+      providerId: "devin",
+      label: "Devin CLI",
     }),
   opencode: (logger, runtimeSettings, options) =>
     new OpenCodeRuntimeClient(logger, runtimeSettings, {
@@ -227,8 +237,9 @@ const PROVIDER_CLIENT_FACTORIES: Record<string, ProviderClientFactory> = {
   "mock-slow": () => new MockSlowProviderClient(),
 };
 
-function getCursorACPCommand(
+function getACPCommand(
   runtimeSettings: ProviderRuntimeSettings | undefined,
+  defaultCommand: [string, ...string[]],
 ): [string, ...string[]] {
   if (
     runtimeSettings?.command?.mode === "replace" &&
@@ -237,7 +248,7 @@ function getCursorACPCommand(
     return runtimeSettings.command.argv;
   }
 
-  return ["cursor-agent", "acp"];
+  return defaultCommand;
 }
 
 function getProviderClientFactory(provider: string): ProviderClientFactory {
@@ -947,11 +958,28 @@ export function buildProviderRegistry(
   });
 
   return Object.fromEntries(
-    [...resolvedProviders.entries()].map(([provider, resolved]) => [
-      provider,
-      createRegistryEntry(logger, provider, resolved),
-    ]),
+    [...resolvedProviders.entries()]
+      .filter(([provider]) => isRegistryProviderAllowed(logger, provider, options))
+      .map(([provider, resolved]) => [provider, createRegistryEntry(logger, provider, resolved)]),
   ) as Record<AgentProvider, ProviderDefinition>;
+}
+
+const DEV_PROVIDER_IDS = new Set(DEV_AGENT_PROVIDER_DEFINITIONS.map((definition) => definition.id));
+
+function isRegistryProviderAllowed(
+  logger: Logger,
+  provider: string,
+  options: BuildProviderRegistryOptions | undefined,
+): boolean {
+  const allowed = options?.allowedProviderIds;
+  if (!allowed || allowed.includes(provider)) {
+    return true;
+  }
+  if (options?.isDev === true && DEV_PROVIDER_IDS.has(provider)) {
+    return true;
+  }
+  logger.debug({ provider }, "Provider excluded by internal edition allowlist");
+  return false;
 }
 
 export function getProviderIds(

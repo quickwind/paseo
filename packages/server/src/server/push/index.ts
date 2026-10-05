@@ -1,4 +1,5 @@
 import type pino from "pino";
+import { INTERNAL_EDITION } from "@getpaseo/protocol/internal-edition";
 
 import { PushService, type PushPayload } from "./push-service.js";
 import { PushTokenStore } from "./token-store.js";
@@ -24,9 +25,12 @@ export function createPushNotifications(options: {
   const now = options.now ?? Date.now;
   const store = new PushTokenStore(options.logger, options.filePath, now, PUSH_TOKEN_LEASE_MS);
   const service = new PushService(options.logger, (token) => store.revokeToken(token));
+  // Internal edition: Expo's push service is a cloud relay, so pushes are dropped.
   const deliver =
     options.deliver ??
-    ((tokens: string[], payload: PushPayload) => service.sendPush(tokens, payload));
+    (INTERNAL_EDITION.cloudServicesEnabled
+      ? (tokens: string[], payload: PushPayload) => service.sendPush(tokens, payload)
+      : async () => undefined);
 
   return {
     renew(token) {

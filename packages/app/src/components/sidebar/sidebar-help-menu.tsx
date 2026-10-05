@@ -27,6 +27,7 @@ import type { HostProfile } from "@/types/host-connection";
 import { formatVersionWithPrefix } from "@/desktop/updates/desktop-updates";
 import { resolveAppVersion } from "@/utils/app-version";
 import { openChangelog } from "@/changelog";
+import { INTERNAL_EDITION } from "@getpaseo/protocol/internal-edition";
 import { openExternalUrl } from "@/utils/open-external-url";
 
 const DISCORD_URL = "https://discord.gg/jz8T2uahpH";
@@ -135,13 +136,15 @@ export function SidebarHelpMenu() {
             {t("sidebar.help.shortcuts")}
           </DropdownMenuItem>
         ) : null}
-        <DropdownMenuItem
-          testID="sidebar-help-changelog"
-          leading={changelogLeadingIcon}
-          onSelect={openChangelog}
-        >
-          {t("sidebar.help.whatsNew")}
-        </DropdownMenuItem>
+        {INTERNAL_EDITION.cloudServicesEnabled ? (
+          <DropdownMenuItem
+            testID="sidebar-help-changelog"
+            leading={changelogLeadingIcon}
+            onSelect={openChangelog}
+          >
+            {t("sidebar.help.whatsNew")}
+          </DropdownMenuItem>
+        ) : null}
         <DropdownMenuItem
           testID="sidebar-help-diagnostics"
           leading={diagnosticLeadingIcon}

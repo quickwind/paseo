@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { INTERNAL_EDITION } from "@getpaseo/protocol/internal-edition";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { app } from "electron";
@@ -224,7 +225,8 @@ class ElectronAppUpdateRuntime implements AppUpdateRuntime {
 
 const appUpdateService = createAppUpdateService({
   runtime: new ElectronAppUpdateRuntime(),
-  isPackaged: () => app.isPackaged,
+  // Internal edition: never contact the public release feed; IT distributes builds.
+  isPackaged: () => app.isPackaged && INTERNAL_EDITION.cloudServicesEnabled,
   now: () => Date.now(),
   bucket: async () => bucketFromStagingUserId(await getStagingUserId()),
   reportCheckError: (error) => {

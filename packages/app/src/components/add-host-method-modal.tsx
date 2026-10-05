@@ -7,6 +7,7 @@ import { AdaptiveModalSheet, type SheetHeader } from "./adaptive-modal-sheet";
 import { isFdroidBuild } from "@/constants/build-profile";
 import { isNative } from "@/constants/platform";
 import { isElectronRuntime } from "@/desktop/host";
+import { INTERNAL_EDITION } from "@getpaseo/protocol/internal-edition";
 import type { Theme } from "@/styles/theme";
 
 const ThemedQrCode = withUnistyles(QrCode);
@@ -118,7 +119,7 @@ export function AddHostMethodModal({
         </Pressable>
       ) : null}
 
-      {isNative && !isFdroidBuild ? (
+      {INTERNAL_EDITION.pairingEnabled && isNative && !isFdroidBuild ? (
         <Pressable
           style={styles.option}
           onPress={handleScan}
@@ -135,21 +136,23 @@ export function AddHostMethodModal({
         </Pressable>
       ) : null}
 
-      <Pressable
-        style={styles.option}
-        onPress={handlePaste}
-        accessibilityRole="button"
-        accessibilityLabel={t("pairing.connectionMethods.pasteLink.title")}
-        testID="add-host-method-pair-link"
-      >
-        <ThemedClipboardPaste size={18} uniProps={foregroundIconMapping} />
-        <View style={styles.optionBody}>
-          <Text style={styles.optionText}>{t("pairing.connectionMethods.pasteLink.title")}</Text>
-          <Text style={styles.optionSubtext}>
-            {t("pairing.connectionMethods.pasteLink.description")}
-          </Text>
-        </View>
-      </Pressable>
+      {INTERNAL_EDITION.pairingEnabled ? (
+        <Pressable
+          style={styles.option}
+          onPress={handlePaste}
+          accessibilityRole="button"
+          accessibilityLabel={t("pairing.connectionMethods.pasteLink.title")}
+          testID="add-host-method-pair-link"
+        >
+          <ThemedClipboardPaste size={18} uniProps={foregroundIconMapping} />
+          <View style={styles.optionBody}>
+            <Text style={styles.optionText}>{t("pairing.connectionMethods.pasteLink.title")}</Text>
+            <Text style={styles.optionSubtext}>
+              {t("pairing.connectionMethods.pasteLink.description")}
+            </Text>
+          </View>
+        </Pressable>
+      ) : null}
     </AdaptiveModalSheet>
   );
 }

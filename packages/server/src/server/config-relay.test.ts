@@ -21,19 +21,16 @@ describe("daemon relay config", () => {
     await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
   });
 
-  test("preserves implicit relay-on for a legacy config without enabled", async () => {
-    const home = await createPaseoHome({ version: 1, daemon: { relay: {} } });
-    expect(loadConfig(home, { env: {} }).relayEnabled).toBe(true);
-  });
-
-  test("keeps explicit persisted relay state and marks it mutable", async () => {
-    const home = await createPaseoHome({
-      version: 1,
-      daemon: { relay: { enabled: false } },
-    });
-    const config = loadConfig(home, { env: {} });
+  // Internal edition: the relay is a cloud service, so no input can turn it on.
+  test.each([
+    ["a legacy config without enabled", { relay: {} }, {}],
+    ["persisted enabled true", { relay: { enabled: true } }, {}],
+    ["PASEO_RELAY_ENABLED=true", { relay: { enabled: false } }, { PASEO_RELAY_ENABLED: "true" }],
+  ])("keeps relay off and locked for %s", async (_label, daemon, env) => {
+    const home = await createPaseoHome({ version: 1, daemon });
+    const config = loadConfig(home, { env });
     expect(config.relayEnabled).toBe(false);
-    expect(config.relayEnabledMutable).toBe(true);
+    expect(config.relayEnabledMutable).toBe(false);
   });
 
   test("removing enabled from a modern config keeps relay disabled", async () => {
@@ -53,44 +50,6 @@ describe("daemon relay config", () => {
 
     expect(reloaded.relayEnabled).toBe(false);
   });
-
-  test("legacy configs retain relay-on compatibility when enabled remains absent", async () => {
-    const home = await createPaseoHome({ version: 1, daemon: { relay: {} } });
-    const startup = loadConfig(home, { env: {} });
-    const reloaded = resolveConfigFromPersisted(
-      home,
-      { version: 1, daemon: { relay: {} } },
-      {
-        env: startup.configReload?.env,
-        relayEnabledFallback: startup.configReload?.relayEnabledFallback,
-      },
-    );
-
-    expect(reloaded.relayEnabled).toBe(true);
-  });
-
-  test("marks environment relay overrides immutable", async () => {
-    const home = await createPaseoHome({
-      version: 1,
-      daemon: { relay: { enabled: false } },
-    });
-    const config = loadConfig(home, { env: { PASEO_RELAY_ENABLED: "true" } });
-    expect(config.relayEnabled).toBe(true);
-    expect(config.relayEnabledMutable).toBe(false);
-  });
-
-  test.each(["", "treu"])(
-    "ignores invalid relay override %j without locking config",
-    async (value) => {
-      const home = await createPaseoHome({
-        version: 1,
-        daemon: { relay: { enabled: false } },
-      });
-      const config = loadConfig(home, { env: { PASEO_RELAY_ENABLED: value } });
-      expect(config.relayEnabled).toBe(false);
-      expect(config.relayEnabledMutable).toBe(true);
-    },
-  );
 
   test("loads relay TLS from env, persisted config, and hosted relay fallback", async () => {
     const persistedHome = await createPaseoHome({
@@ -160,7 +119,7 @@ describe("daemon service proxy config", () => {
     await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
   });
 
-  test("loads public base URL from env before persisted config", async () => {
+  test("never publishes services at a public base URL", async () => {
     const home = await createPaseoHome({
       version: 1,
       daemon: {
@@ -175,9 +134,18 @@ describe("daemon service proxy config", () => {
     });
 
     expect(config.serviceProxy).toEqual({
-      publicBaseUrl: "https://env.example.com",
+      publicBaseUrl: null,
       standaloneListen: null,
     });
+  });
+
+  test("rejects a standalone service listener outside loopback", async () => {
+    const home = await createPaseoHome({
+      version: 1,
+      daemon: { serviceProxy: { listen: "0.0.0.0:9999" } },
+    });
+
+    expect(() => loadConfig(home, { env: {} })).toThrow("is not a loopback address");
   });
 
   test("does not synthesize a standalone service listener from enabled true", async () => {
@@ -209,16 +177,30 @@ describe("daemon service proxy config", () => {
       standaloneListen: null,
     });
   });
+});
 
-  test("rejects invalid PASEO_SERVICE_PROXY_PUBLIC_BASE_URL values", async () => {
-    const home = await createPaseoHome({ version: 1 });
-
-    expect(() =>
-      loadConfig(home, {
-        env: { PASEO_SERVICE_PROXY_PUBLIC_BASE_URL: "not-a-url" },
-      }),
-    ).toThrow("Invalid PASEO_SERVICE_PROXY_PUBLIC_BASE_URL: not-a-url");
+describe("daemon listen config", () => {
+  afterEach(async () => {
+    await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
   });
+
+  test.each(["127.0.0.1:6767", "localhost:6767", "[::1]:6767", "6767", "unix:///tmp/paseo.sock"])(
+    "accepts local-only listen %s",
+    async (listen) => {
+      const home = await createPaseoHome({ version: 1, daemon: { listen } });
+      expect(loadConfig(home, { env: {} }).listen).toBe(listen);
+    },
+  );
+
+  test.each(["0.0.0.0:6767", "192.168.1.20:6767", "[::]:6767", "paseo.internal:6767"])(
+    "rejects network listen %s",
+    async (listen) => {
+      const home = await createPaseoHome({ version: 1 });
+      expect(() => loadConfig(home, { env: { PASEO_LISTEN: listen } })).toThrow(
+        "is not a loopback address",
+      );
+    },
+  );
 });
 
 describe("daemon trusted proxy config", () => {

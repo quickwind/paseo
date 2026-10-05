@@ -22,6 +22,7 @@ import { TitlebarDragRegion } from "@/components/desktop/titlebar-drag-region";
 import { useLocalDaemonServerId } from "@/hooks/use-is-local-daemon";
 import { PairDeviceModal } from "@/desktop/components/pair-device-modal";
 import { buildSettingsHostSectionRoute } from "@/utils/host-routes";
+import { INTERNAL_EDITION } from "@getpaseo/protocol/internal-edition";
 
 export function OpenProjectScreen() {
   const { t } = useTranslation();
@@ -92,7 +93,7 @@ export function OpenProjectScreen() {
             onPress={handleOpenProviders}
             testID="open-project-setup-providers"
           />
-          {localServerId ? (
+          {localServerId && INTERNAL_EDITION.pairingEnabled ? (
             <HomeTile
               icon={Smartphone}
               title={t("openProject.tiles.pairDevice.title")}
