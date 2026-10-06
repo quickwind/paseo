@@ -101,30 +101,28 @@ describe("deriveProjectSlug", () => {
     expect(deriveProjectSlug(otherCwd, "https://github.com/other/claude-code")).toBe("claude-code");
   });
 
-  test("falls through to the cwd basename for non-GitHub remotes", () => {
+  // Internal edition: any remote names the project by its last path segment.
+  test.each([
+    ["git@gitlab.example.com:payments/core/Billing Service.git", "billing-service"],
+    ["ssh://git@gitlab.example.com:2222/payments/core/billing.git", "billing"],
+    ["https://gitlab.example.com/payments/core/billing.git", "billing"],
+    ["https://gitlab.example/mirror/github.com/acme/claude-code.git", "claude-code"],
+  ])("slugifies the last path segment of the non-GitHub remote %s", (remoteUrl, expectedSlug) => {
     const parentDir = track(mkdtempSync(path.join(os.tmpdir(), "non-github-parent-")));
     const cwd = path.join(parentDir, "My Local Repo");
     mkdirSync(cwd);
     runGit(cwd, ["init"]);
-    runGit(cwd, ["config", "remote.origin.url", "git@gitlab.com:acme/claude-code.git"]);
+    runGit(cwd, ["config", "remote.origin.url", remoteUrl]);
 
-    expect(deriveProjectSlug(cwd, "git@gitlab.com:acme/claude-code.git")).toBe("my-local-repo");
+    expect(deriveProjectSlug(cwd, remoteUrl)).toBe(expectedSlug);
   });
 
-  test("falls through to the cwd basename for embedded GitHub paths in non-GitHub remotes", () => {
-    const parentDir = track(mkdtempSync(path.join(os.tmpdir(), "embedded-github-parent-")));
-    const cwd = path.join(parentDir, "Embedded GitHub Path");
+  test("falls through to the cwd basename for a remote that cannot be parsed", () => {
+    const parentDir = track(mkdtempSync(path.join(os.tmpdir(), "unparsable-parent-")));
+    const cwd = path.join(parentDir, "Unparsable Remote");
     mkdirSync(cwd);
-    runGit(cwd, ["init"]);
-    runGit(cwd, [
-      "config",
-      "remote.origin.url",
-      "https://gitlab.example/mirror/github.com/acme/claude-code.git",
-    ]);
 
-    expect(
-      deriveProjectSlug(cwd, "https://gitlab.example/mirror/github.com/acme/claude-code.git"),
-    ).toBe("embedded-github-path");
+    expect(deriveProjectSlug(cwd, "not a remote")).toBe("unparsable-remote");
   });
 
   test("falls through to the cwd basename for an empty remote", () => {

@@ -114,7 +114,9 @@ async function createPaseoWorktreeWithPriority(
         : {}),
     });
 
-    deps.github.invalidate({ cwd: createdWorktree.worktree.worktreePath });
+    // Internal edition: invalidate the forge resolved for this checkout, not
+    // always GitHub (the edition resolves only the configured GitLab).
+    deps.workspaceGitService.invalidateForge(createdWorktree.worktree.worktreePath);
 
     return {
       worktree: createdWorktree.worktree,

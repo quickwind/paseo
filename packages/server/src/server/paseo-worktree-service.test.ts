@@ -87,6 +87,29 @@ test("creates a worktree and registers it in the source workspace project withou
   expect(events).toEqual([`workspace:${result.workspace.workspaceId}`]);
 });
 
+test("invalidates the forge resolved for the new worktree checkout", async () => {
+  const { repoDir, tempDir } = createGitRepo();
+  cleanupPaths.push(tempDir);
+  const deps = createDeps();
+  deps.workspaceGitService.invalidateForge = vi.fn();
+  const githubInvalidate = vi.spyOn(deps.github, "invalidate");
+
+  const result = await createPaseoWorktree(
+    {
+      cwd: repoDir,
+      worktreeSlug: "feature-invalidate",
+      runSetup: false,
+      paseoHome: path.join(tempDir, ".paseo"),
+    },
+    deps,
+  );
+
+  expect(deps.workspaceGitService.invalidateForge).toHaveBeenCalledWith(
+    result.worktree.worktreePath,
+  );
+  expect(githubInvalidate).not.toHaveBeenCalled();
+});
+
 test("refreshes a source project that became Git while creating a worktree", async () => {
   const { repoDir, tempDir } = createGitRepo();
   cleanupPaths.push(tempDir);
