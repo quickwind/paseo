@@ -767,10 +767,11 @@ describe.skipIf(isPlatform("win32"))("worktree-core POSIX-only", () => {
       const { tempDir, repoDir, paseoHome } = createGitLabMrWithConflictingOriginBranchRepo();
       cleanupPaths.push(tempDir);
       const gitlab = createGitLabService({
-        resolveGlabPath: async () => "/usr/bin/glab",
+        config: { url: "https://gitlab.example.com" },
+        resolveExecutable: async () => "/usr/bin/gitlab",
         resolveRemoteUrl: async () => "git@gitlab.example.com:example-group/example-project.git",
         runner: async (args) => {
-          if (args[0] === "mr" && args[1] === "view") {
+          if (args.includes("project-merge-request") && args.includes("get")) {
             return {
               stdout: JSON.stringify({
                 iid: 14,
@@ -786,7 +787,7 @@ describe.skipIf(isPlatform("win32"))("worktree-core POSIX-only", () => {
               stderr: "",
             };
           }
-          throw new Error(`unexpected glab args: ${args.join(" ")}`);
+          throw new Error(`unexpected gitlab args: ${args.join(" ")}`);
         },
       });
 

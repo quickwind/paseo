@@ -3,7 +3,7 @@ import { normalizeHost } from "@getpaseo/protocol/git-remote";
 import { createGitHubService, probeGitHubHost } from "./github-service.js";
 import type { ForgeService } from "./forge-service.js";
 import { createGiteaService, resolveGiteaFamilyForge } from "./gitea-service.js";
-import { createGitLabService, probeGitLabHost } from "./gitlab-service.js";
+import { createGitLabService } from "./gitlab-service.js";
 import { matchesGitLabForgeHost, type GitLabForgeConfig } from "./gitlab-forge-config.js";
 
 export type ForgeServiceFactory = () => ForgeService;
@@ -147,9 +147,10 @@ const DEFAULT_FORGE_ENTRIES: ReadonlyArray<readonly [string, ForgeAdapterRegistr
   [
     "gitlab",
     {
-      createService: createGitLabService,
+      // Internal edition: self-managed GitLab is no longer probed (the probe
+      // needed `glab`); the gated registry matches the configured host instead.
+      createService: () => createGitLabService({ config: { url: "https://gitlab.com" } }),
       matchesHost: matchesCloudHost("gitlab"),
-      probeHost: probeGitLabHost,
     },
   ],
   [
@@ -196,7 +197,7 @@ export function createGatedForgeRegistry(options: GatedForgeRegistryOptions): Fo
       const gitlab = options.gitlab;
       if (gitlab) {
         registry.register("gitlab", {
-          createService: () => createGitLabService(),
+          createService: () => createGitLabService({ config: gitlab }),
           matchesHost: (host) => matchesGitLabForgeHost(gitlab, host),
         });
       }

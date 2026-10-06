@@ -1,17 +1,23 @@
-import { z } from "zod";
-import { parseGitRemoteLocation } from "@getpaseo/protocol/git-remote";
-import { findExecutable } from "../executable-resolution/executable-resolution.js";
 import {
-  createCachedCliPathResolver,
-  createForgeCliRunner,
-  ForgeAuthenticationError,
-  ForgeCliMissingError,
-  defaultResolveRemoteUrl,
-  parseCliJsonOutput,
-  probeHostViaCliAuthStatus,
-  ForgeCommandError,
-  type ForgeCommandFailureParams,
-} from "./forge-cli-command.js";
+  GitLabAuthenticationError,
+  GitLabCliMissingError,
+  GitLabCommandError,
+  createGitLabPythonClient,
+  parseGitLabHttpStatus,
+  type GitLabClient,
+  type GitLabPythonClientOptions,
+} from "./gitlab-python-client.js";
+import type { GitLabForgeConfig } from "./gitlab-forge-config.js";
+import type {
+  GitLabApprovals,
+  GitLabDiscussion,
+  GitLabIssue,
+  GitLabMergeRequest,
+  GitLabNote,
+  GitLabNoteLineRangeEndpoint,
+  GitLabPipelineDetails,
+  GitLabPipelineJob,
+} from "./gitlab-rest-schemas.js";
 import {
   compareTimelineItems,
   createUnavailableSearchResult,
@@ -43,6 +49,7 @@ import type {
   PullRequestCheckoutTarget,
   PullRequestCreateResult,
   PullRequestMergeable,
+  PullRequestMergeMethod,
   PullRequestMergeResult,
   PullRequestSummary,
   PullRequestTimeline,
@@ -61,233 +68,20 @@ import {
 import { GITLAB_ACTIVE_PIPELINE_STATUS_SET } from "@getpaseo/protocol/gitlab-pipeline";
 import { isGitLabStatusFacts, type GitLabStatusFacts } from "./gitlab-facts.js";
 
-const GLAB_ENV = {
-  GIT_TERMINAL_PROMPT: "0",
-  GLAB_CHECK_UPDATE: "0",
-} as const;
-
-const GLAB_COMMAND_TIMEOUT_MS = 30_000;
-
 const GITLAB_DETAILED_MERGEABLE_STATUS = "mergeable";
 const GITLAB_LEGACY_MERGEABLE_STATUS = "can_be_merged";
 
-export class GlabCliMissingError extends ForgeCliMissingError {
-  constructor() {
-    super("GitLab CLI (glab) is not installed or not in PATH");
-    this.name = "GlabCliMissingError";
-  }
+/**
+ * Internal edition: options for the GitLab adapter. `config` locates the
+ * company GitLab; the rest are test seams for the python-gitlab client.
+ */
+export interface CreateGitLabServiceOptions extends Omit<GitLabPythonClientOptions, "config"> {
+  config: GitLabForgeConfig;
+  /** Replaces the python-gitlab client entirely. */
+  client?: GitLabClient;
 }
-
-export class GlabAuthenticationError extends ForgeAuthenticationError {
-  constructor(params: { stderr: string }) {
-    super("GitLab CLI authentication failed", params);
-    this.name = "GlabAuthenticationError";
-  }
-}
-
-export class GlabCommandError extends ForgeCommandError {
-  constructor(params: ForgeCommandFailureParams) {
-    super({ brand: "GitLab", binary: "glab" }, params);
-    this.name = "GlabCommandError";
-  }
-}
-
-export interface GlabCommandRunnerOptions {
-  cwd: string;
-  envOverlay?: Record<string, string>;
-}
-
-export interface GlabCommandResult {
-  stdout: string;
-  stderr: string;
-}
-
-export type GlabCommandRunner = (
-  args: string[],
-  options: GlabCommandRunnerOptions,
-) => Promise<GlabCommandResult>;
-
-export interface CreateGitLabServiceOptions {
-  runner?: GlabCommandRunner;
-  resolveGlabPath?: () => Promise<string | null>;
-  resolveRemoteUrl?: (cwd: string) => Promise<string | null>;
-}
-
-const GitLabPipelineSchema = z
-  .object({
-    id: z.number().optional(),
-    status: z.string().optional(),
-    web_url: z.string().optional(),
-  })
-  .passthrough();
-
-const GitLabPipelineJobSchema = z
-  .object({
-    id: z.number(),
-    name: z.string(),
-    stage: z.string(),
-    status: z.string(),
-    allow_failure: z.boolean().optional(),
-    web_url: z.string().nullable().optional(),
-    duration: z.number().nullable().optional(),
-  })
-  .passthrough();
-
-const GitLabPipelineDetailsSchema = z
-  .object({
-    id: z.number(),
-    status: z.string(),
-    ref: z.string().nullable().optional(),
-    sha: z.string().nullable().optional(),
-    web_url: z.string().nullable().optional(),
-    jobs: z.array(GitLabPipelineJobSchema).optional().default([]),
-  })
-  .passthrough();
-
-const GitLabMergeRequestSchema = z
-  .object({
-    iid: z.number(),
-    title: z.string(),
-    web_url: z.string(),
-    state: z.string(),
-    source_branch: z.string(),
-    target_branch: z.string(),
-    sha: z.string().optional(),
-    source_project_id: z.number().nullable().optional(),
-    target_project_id: z.number().nullable().optional(),
-    draft: z.boolean().optional(),
-    work_in_progress: z.boolean().optional(),
-    has_conflicts: z.boolean().optional(),
-    blocking_discussions_resolved: z.boolean().optional(),
-    merge_when_pipeline_succeeds: z.boolean().optional(),
-    approvals_required: z.number().nullable().optional(),
-    approvals_given: z.number().nullable().optional(),
-    merged_at: z.string().nullable().optional(),
-    detailed_merge_status: z.string().optional(),
-    merge_status: z.string().optional(),
-    description: z.string().nullable().optional(),
-    labels: z.array(z.string()).optional(),
-    updated_at: z.string().optional(),
-    references: z.object({ full: z.string().optional() }).passthrough().optional(),
-    head_pipeline: GitLabPipelineSchema.nullable().optional(),
-  })
-  .passthrough();
-
-const GitLabIssueSchema = z
-  .object({
-    iid: z.number(),
-    title: z.string(),
-    web_url: z.string(),
-    state: z.string(),
-    description: z.string().nullable().optional(),
-    labels: z.array(z.string()).optional(),
-    updated_at: z.string().optional(),
-    references: z.object({ full: z.string().optional() }).passthrough().optional(),
-  })
-  .passthrough();
-
-const GitLabNoteAuthorSchema = z
-  .object({
-    username: z.string().optional(),
-    name: z.string().optional(),
-    web_url: z.string().nullable().optional(),
-    avatar_url: z.string().nullable().optional(),
-  })
-  .passthrough();
-
-const GitLabNoteLineRangeEndpointSchema = z
-  .object({
-    new_line: z.number().nullable().optional(),
-    old_line: z.number().nullable().optional(),
-  })
-  .passthrough();
-
-const GitLabNotePositionSchema = z
-  .object({
-    new_path: z.string().nullable().optional(),
-    old_path: z.string().nullable().optional(),
-    new_line: z.number().nullable().optional(),
-    old_line: z.number().nullable().optional(),
-    line_range: z
-      .object({
-        start: GitLabNoteLineRangeEndpointSchema.nullable().optional(),
-        end: GitLabNoteLineRangeEndpointSchema.nullable().optional(),
-      })
-      .passthrough()
-      .nullable()
-      .optional(),
-  })
-  .passthrough();
-
-const GitLabNoteSchema = z
-  .object({
-    id: z.number(),
-    body: z.string().nullable().optional(),
-    system: z.boolean().optional(),
-    type: z.string().nullable().optional(),
-    created_at: z.string().nullable().optional(),
-    resolvable: z.boolean().optional(),
-    resolved: z.boolean().optional(),
-    author: GitLabNoteAuthorSchema.nullable().optional(),
-    position: GitLabNotePositionSchema.nullable().optional(),
-  })
-  .passthrough();
-
-const GitLabDiscussionSchema = z
-  .object({
-    id: z.string(),
-    individual_note: z.boolean().optional(),
-    notes: z.array(GitLabNoteSchema).optional().default([]),
-  })
-  .passthrough();
-
-const GitLabApprovalsSchema = z
-  .object({
-    approvals_required: z.number().nullable().optional(),
-    approvals_left: z.number().nullable().optional(),
-    approved_by: z.array(z.unknown()).nullable().optional(),
-  })
-  .passthrough();
-
-type GitLabMergeRequest = z.infer<typeof GitLabMergeRequestSchema>;
-type GitLabIssue = z.infer<typeof GitLabIssueSchema>;
-type GitLabNote = z.infer<typeof GitLabNoteSchema>;
-type GitLabNoteLineRangeEndpoint = z.infer<typeof GitLabNoteLineRangeEndpointSchema>;
-type GitLabDiscussion = z.infer<typeof GitLabDiscussionSchema>;
-type GitLabApprovals = z.infer<typeof GitLabApprovalsSchema>;
 
 const TIMELINE_PAGE_SIZE = 100;
-
-async function resolveGlabPath(): Promise<string | null> {
-  return findExecutable("glab");
-}
-
-const glabCliRunner = createForgeCliRunner({
-  binary: "glab",
-  envOverlay: GLAB_ENV,
-  timeoutMs: GLAB_COMMAND_TIMEOUT_MS,
-  isAuthFailureText,
-  errorClasses: {
-    isAlreadyClassified: (candidate) =>
-      candidate instanceof GlabAuthenticationError || candidate instanceof GlabCliMissingError,
-    isCommandError: (candidate): candidate is GlabCommandError =>
-      candidate instanceof GlabCommandError,
-    createAuthError: (stderr) => new GlabAuthenticationError({ stderr }),
-    createMissingError: () => new GlabCliMissingError(),
-    createCommandError: (params) => new GlabCommandError(params),
-  },
-});
-
-async function runGlabCommand(
-  args: string[],
-  options: GlabCommandRunnerOptions,
-): Promise<GlabCommandResult> {
-  return glabCliRunner.run(args, options);
-}
-
-export function parseGitLabHostFromRemoteUrl(url: string): string | null {
-  return parseGitRemoteLocation(url)?.host ?? null;
-}
 
 function mapMergeRequestState(state: string): string {
   if (state === "opened") {
@@ -519,24 +313,28 @@ function toTimelineComment(
   };
 }
 
-function classifyGlabTimelineErrorKind(stderr: string): PullRequestTimelineErrorKind {
-  const normalized = stderr.toLowerCase();
-  if (normalized.includes("404") || normalized.includes("not found")) {
+function classifyGitLabTimelineErrorKind(error: GitLabCommandError): PullRequestTimelineErrorKind {
+  const status = parseGitLabHttpStatus(error.stderr);
+  if (status === 404) {
     return "not_found";
   }
-  if (normalized.includes("403") || normalized.includes("forbidden") || isAuthFailureText(stderr)) {
+  if (status === 401 || status === 403) {
     return "forbidden";
   }
-  return "unknown";
+  const normalized = error.stderr.toLowerCase();
+  if (normalized.includes("not found")) {
+    return "not_found";
+  }
+  return normalized.includes("forbidden") ? "forbidden" : "unknown";
 }
 
-function mapGlabTimelineError(error: unknown): PullRequestTimelineError {
-  if (error instanceof GlabAuthenticationError) {
+function mapGitLabTimelineError(error: unknown): PullRequestTimelineError {
+  if (error instanceof GitLabAuthenticationError) {
     return { kind: "forbidden", message: error.stderr || error.message };
   }
-  if (error instanceof GlabCommandError) {
+  if (error instanceof GitLabCommandError) {
     return {
-      kind: classifyGlabTimelineErrorKind(error.stderr),
+      kind: classifyGitLabTimelineErrorKind(error),
       message: error.stderr || error.message,
     };
   }
@@ -592,7 +390,7 @@ const PULL_REQUEST_CHECK_STATUS_BY_PIPELINE_JOB_STATUS = {
   unknown: "pending",
 } as const satisfies Record<PipelineJobStatus, PullRequestCheck["status"]>;
 
-function toPullRequestCheck(job: z.infer<typeof GitLabPipelineJobSchema>): PullRequestCheck {
+function toPullRequestCheck(job: GitLabPipelineJob): PullRequestCheck {
   const rawStatus = job.status.toLowerCase();
   const allowFailure = job.allow_failure ?? false;
 
@@ -619,9 +417,7 @@ function toPullRequestCheck(job: z.infer<typeof GitLabPipelineJobSchema>): PullR
   };
 }
 
-function toPullRequestChecks(
-  pipeline: z.infer<typeof GitLabPipelineDetailsSchema>,
-): PullRequestCheck[] {
+function toPullRequestChecks(pipeline: GitLabPipelineDetails): PullRequestCheck[] {
   return [...pipeline.jobs].sort((a, b) => a.id - b.id).map(toPullRequestCheck);
 }
 
@@ -652,8 +448,8 @@ function aggregateStageStatus(jobs: PipelineJob[]): PipelineJobStatus {
   return "unknown";
 }
 
-function toPipelineDetails(pipeline: z.infer<typeof GitLabPipelineDetailsSchema>): PipelineDetails {
-  // glab returns jobs newest-first; ascending id restores creation order.
+function toPipelineDetails(pipeline: GitLabPipelineDetails): PipelineDetails {
+  // Ascending id restores job creation order.
   const jobs: PipelineJob[] = [...pipeline.jobs]
     .sort((a, b) => a.id - b.id)
     .map((job) => ({
@@ -693,7 +489,7 @@ function toPipelineDetails(pipeline: z.infer<typeof GitLabPipelineDetailsSchema>
   };
 }
 
-function toCheckDetails(pipeline: z.infer<typeof GitLabPipelineDetailsSchema>): CheckDetails {
+function toCheckDetails(pipeline: GitLabPipelineDetails): CheckDetails {
   return {
     checkRunId: pipeline.id,
     workflowRunId: null,
@@ -732,7 +528,7 @@ function toCurrentPullRequestStatus(
     isDraft: mr.draft ?? mr.work_in_progress ?? false,
     mergeable: mapMergeable(mr),
     checks,
-    // Aggregate and job list must come from the same pipeline: glab resolves
+    // Aggregate and job list must come from the same pipeline: the client reads
     // the MR's latest pipeline, which can differ from head_pipeline (detached
     // vs branch pipelines, or a newer run). GitLab's own pipeline status stays
     // authoritative for the aggregate - deriving it from the mapped jobs would
@@ -743,64 +539,13 @@ function toCurrentPullRequestStatus(
   };
 }
 
-function isAuthFailureText(text: string): boolean {
-  return /\b(401|unauthorized|not logged in|authentication failed|no token|invalid token)\b/i.test(
-    text,
-  );
-}
-
-/**
- * Matches only glab's genuine "no open merge request for this branch" phrasing.
- * A broad `not found` match would swallow a 404/403 for a private or missing
- * project as "no MR", so those are left to propagate as errors instead.
- */
-function isNoMergeRequestText(text: string): boolean {
-  return /no (open )?merge requests?/i.test(text);
-}
-
-/**
- * Guards a positional glab argument (a branch/ref or MR selector) so a value
- * beginning with `-` cannot be reinterpreted as a flag. glab positionals carry
- * no `--` separator here; git already forbids ref names that start with `-`, so
- * a leading dash is treated as injection rather than a legitimate ref.
- */
-function assertSafeGlabPositional(value: string): void {
-  if (value.startsWith("-")) {
-    throw new Error(`Refusing to pass a GitLab argument that begins with '-': ${value}`);
-  }
-}
-
-function extractMergeRequestUrl(stdout: string): string | null {
-  const match = stdout.match(/https?:\/\/\S+\/-\/merge_requests\/\d+/);
-  return match ? match[0] : null;
-}
-
-function parseIidFromUrl(url: string): number | null {
-  const match = url.match(/\/merge_requests\/(\d+)/);
-  return match ? Number(match[1]) : null;
-}
-
-/**
- * Probe whether `host` is a GitLab instance by asking glab about its auth status
- * for that hostname (exit 0 => a configured GitLab instance, even for
- * self-managed hosts whose name carries no "gitlab" hint). The forge resolver
- * uses this to detect self-managed hosts the name heuristic can't classify.
- */
-export async function probeGitLabHost(host: string): Promise<boolean> {
-  return probeHostViaCliAuthStatus({
-    cli: "glab",
-    host,
-    envOverlay: GLAB_ENV,
-  });
-}
-
 function getGitlabStatusFacts(status: MergePullRequestOptions["status"]): GitLabStatusFacts | null {
   const forgeSpecific = status?.forgeSpecific;
   return isGitLabStatusFacts(forgeSpecific) ? forgeSpecific : null;
 }
 
 /**
- * Server-side guard for GitLab auto-merge: `glab mr merge --auto-merge` only
+ * Server-side guard for GitLab auto-merge: `merge_when_pipeline_succeeds` only
  * schedules the merge while a pipeline is active. Without one it merges on the
  * spot, so this is enforced at execution time as well as in UI policy.
  */
@@ -850,111 +595,68 @@ function assertGitLabDirectMergeReady(input: Pick<MergePullRequestOptions, "stat
   }
 }
 
-function isGlabSearchAuthFailure(reason: unknown): boolean {
-  return reason instanceof GlabCliMissingError || reason instanceof GlabAuthenticationError;
+function isGitLabSearchAuthFailure(reason: unknown): boolean {
+  return reason instanceof GitLabCliMissingError || reason instanceof GitLabAuthenticationError;
 }
 
-function getGlabUnavailableSearchAuthState(
+function getGitLabUnavailableSearchAuthState(
   results: PromiseSettledResult<unknown>[],
 ): "cli_missing" | "unauthenticated" | null {
   if (
     results.length === 0 ||
     !results.every(
-      (result) => result.status === "rejected" && isGlabSearchAuthFailure(result.reason),
+      (result) => result.status === "rejected" && isGitLabSearchAuthFailure(result.reason),
     )
   ) {
     return null;
   }
   return results.some(
-    (result) => result.status === "rejected" && result.reason instanceof GlabCliMissingError,
+    (result) => result.status === "rejected" && result.reason instanceof GitLabCliMissingError,
   )
     ? "cli_missing"
     : "unauthenticated";
 }
 
-function throwFirstNonGlabAuthSearchRejection(results: PromiseSettledResult<unknown>[]): void {
+function throwFirstNonGitLabAuthSearchRejection(results: PromiseSettledResult<unknown>[]): void {
   const failed = results.find(
     (result): result is PromiseRejectedResult =>
-      result.status === "rejected" && !isGlabSearchAuthFailure(result.reason),
+      result.status === "rejected" && !isGitLabSearchAuthFailure(result.reason),
   );
   if (failed) {
     throw failed.reason;
   }
 }
 
-export function createGitLabService(options: CreateGitLabServiceOptions = {}): ForgeService {
-  const runner = options.runner ?? runGlabCommand;
-  const resolveGlab = createCachedCliPathResolver(options.resolveGlabPath ?? resolveGlabPath);
-  const resolveRemoteUrl = options.resolveRemoteUrl ?? defaultResolveRemoteUrl;
+const MERGE_METHOD_REBASE_UNSUPPORTED =
+  "Rebase merge is not supported for GitLab merge requests; use merge or squash";
 
-  async function run(args: string[], runOptions: GlabCommandRunnerOptions): Promise<string> {
-    const glabPath = await resolveGlab();
-    if (!glabPath) {
-      throw new GlabCliMissingError();
-    }
-    try {
-      const result = await runner(args, runOptions);
-      return result.stdout.trim();
-    } catch (error) {
-      throw glabCliRunner.normalizeError(error, { args, cwd: runOptions.cwd });
-    }
+function assertGitLabMergeMethodSupported(mergeMethod: PullRequestMergeMethod): void {
+  // Internal edition: python-gitlab's `merge` action has no rebase option, and
+  // phase 1 ships merge and squash only.
+  if (mergeMethod === "rebase") {
+    throw new Error(MERGE_METHOD_REBASE_UNSUPPORTED);
   }
+}
 
-  // Centralize parse + validate so a malformed or empty glab payload surfaces as
-  // a classified GlabCommandError (with args + cwd) instead of a raw
-  // SyntaxError/ZodError that bypasses the Glab* error classification.
-  async function runJson<T>(
-    args: string[],
-    runOptions: GlabCommandRunnerOptions,
-    schema: z.ZodType<T>,
-  ): Promise<T> {
-    const stdout = await run(args, runOptions);
-    return parseCliJsonOutput({
-      commandName: "glab",
-      args,
-      cwd: runOptions.cwd,
-      stdout,
-      schema,
-      createCommandError: (params) => new GlabCommandError(params),
-    });
-  }
+export function createGitLabService(options: CreateGitLabServiceOptions): ForgeService {
+  const client = options.client ?? createGitLabPythonClient(options);
 
-  async function viewMergeRequest(cwd: string, ref: string): Promise<GitLabMergeRequest> {
-    assertSafeGlabPositional(ref);
-    return runJson(["mr", "view", ref, "-F", "json"], { cwd }, GitLabMergeRequestSchema);
-  }
-
-  async function listMergeRequestsBySourceBranch(
-    cwd: string,
-    sourceBranch: string,
-  ): Promise<GitLabMergeRequest[]> {
-    return runJson(
-      [
-        "mr",
-        "list",
-        "--all",
-        "--source-branch",
-        sourceBranch,
-        "--order",
-        "updated_at",
-        "--sort",
-        "desc",
-        "--per-page",
-        "100",
-        "-F",
-        "json",
-      ],
-      { cwd },
-      z.array(GitLabMergeRequestSchema),
-    );
+  async function viewMergeRequest(cwd: string, iid: number): Promise<GitLabMergeRequest> {
+    return client.getMergeRequest({ cwd, project: await client.resolveProject(cwd), iid });
   }
 
   async function resolveCurrentMergeRequest(
     cwd: string,
     headRef: string,
     headSha?: string,
-  ): Promise<GitLabMergeRequest | null> {
-    const mergeRequests = await listMergeRequestsBySourceBranch(cwd, headRef);
+  ): Promise<{ mr: GitLabMergeRequest; project: string } | null> {
+    const project = await client.resolveProject(cwd);
+    const mergeRequests = await client.listMergeRequests({
+      cwd,
+      project,
+      sourceBranch: headRef,
+      limit: 100,
+    });
     const candidates = mergeRequests.filter((mr) => mr.source_branch === headRef);
     const match =
       candidates.find((mr) => mapMergeRequestState(mr.state) === "open") ??
@@ -963,31 +665,32 @@ export function createGitLabService(options: CreateGitLabServiceOptions = {}): F
           mapMergeRequestState(mr.state) !== "open" && headSha !== undefined && mr.sha === headSha,
       ) ??
       null;
-    return match ? viewMergeRequest(cwd, String(match.iid)) : null;
+    if (!match) {
+      return null;
+    }
+    return { mr: await client.getMergeRequest({ cwd, project, iid: match.iid }), project };
   }
 
   /**
-   * Detects whether discussions exist beyond the first fetched page. The command
-   * runner exposes no pagination headers, so instead of a bare `length >= 100`
-   * (which falsely flags an exactly-full page as truncated) we probe for a single
-   * discussion on the next page. Best-effort: if the probe fails we keep the
-   * already-fetched notes and conservatively report truncation, since a full
-   * first page means at least one page of discussions exists.
+   * Detects whether discussions exist beyond the first fetched page. A bare
+   * `length >= 100` falsely flags an exactly-full page as truncated, so probe
+   * for a single discussion on the next page. Best-effort: if the probe fails we
+   * keep the already-fetched notes and conservatively report truncation, since a
+   * full first page means at least one page of discussions exists.
    */
   async function hasDiscussionsAfterFirstPage(
     cwd: string,
-    projectPath: string,
+    project: string,
     iid: number,
   ): Promise<boolean> {
     try {
-      const probe = await runJson(
-        [
-          "api",
-          `projects/${encodeURIComponent(projectPath)}/merge_requests/${iid}/discussions?per_page=1&page=${TIMELINE_PAGE_SIZE + 1}`,
-        ],
-        { cwd },
-        z.array(GitLabDiscussionSchema),
-      );
+      const probe = await client.listDiscussions({
+        cwd,
+        project,
+        iid,
+        perPage: 1,
+        page: TIMELINE_PAGE_SIZE + 1,
+      });
       return probe.length > 0;
     } catch {
       return true;
@@ -995,24 +698,17 @@ export function createGitLabService(options: CreateGitLabServiceOptions = {}): F
   }
 
   /**
-   * Fetches MR approval counts from the dedicated approvals endpoint, which
-   * `glab mr view` omits. Best-effort: a host without the endpoint must not
-   * break the MR status, so failures leave the counts at their fallback (0).
+   * Fetches MR approval counts from the dedicated approvals endpoint. Best-effort:
+   * a host without the endpoint must not break the MR status, so failures leave
+   * the counts at their fallback (0).
    */
   async function fetchApprovals(
     cwd: string,
+    project: string,
     mr: GitLabMergeRequest,
   ): Promise<GitLabApprovals | null> {
-    const projectPath = extractProjectPath(mr.references?.full);
-    if (!projectPath) {
-      return null;
-    }
     try {
-      return await runJson(
-        ["api", `projects/${encodeURIComponent(projectPath)}/merge_requests/${mr.iid}/approvals`],
-        { cwd },
-        GitLabApprovalsSchema,
-      );
+      return await client.getApprovals({ cwd, project, iid: mr.iid });
     } catch {
       return null;
     }
@@ -1020,7 +716,7 @@ export function createGitLabService(options: CreateGitLabServiceOptions = {}): F
 
   /**
    * Populates the neutral checks used by the sidebar and hover card. Pipeline
-   * drill-down remains independently available, so any glab command or output
+   * drill-down remains independently available, so any command or output
    * failure while loading optional job details must not make the merge request
    * itself disappear. Authentication and missing-CLI failures use separate
    * error classes and still propagate.
@@ -1032,20 +728,20 @@ export function createGitLabService(options: CreateGitLabServiceOptions = {}): F
 
   async function fetchPipelineChecks(
     cwd: string,
+    project: string,
     mr: GitLabMergeRequest,
   ): Promise<PipelineChecksResult> {
     if (mr.head_pipeline?.id === undefined) {
       return { checks: [], pipelineStatus: null };
     }
     try {
-      const pipeline = await runJson(
-        ["ci", "get", "--merge-request", String(mr.iid), "--with-job-details", "-F", "json"],
-        { cwd },
-        GitLabPipelineDetailsSchema,
-      );
+      const pipeline = await client.getLatestMrPipelineWithJobs({ cwd, project, iid: mr.iid });
+      if (!pipeline) {
+        return { checks: [], pipelineStatus: null };
+      }
       return { checks: toPullRequestChecks(pipeline), pipelineStatus: pipeline.status };
     } catch (error) {
-      if (error instanceof GlabCommandError) {
+      if (error instanceof GitLabCommandError) {
         console.warn(
           `Failed to load GitLab pipeline jobs for MR !${mr.iid}: ${
             error.stderr?.trim() || error.message
@@ -1060,55 +756,54 @@ export function createGitLabService(options: CreateGitLabServiceOptions = {}): F
   async function runMergeRequestList(
     input: ListPullRequestsOptions,
   ): Promise<PullRequestSummary[]> {
-    const args = ["mr", "list", "-F", "json"];
-    const query = input.query?.trim();
-    if (query) {
-      args.push("--search", query);
-    }
-    if (typeof input.limit === "number") {
-      args.push("-P", String(input.limit));
-    }
-    const mergeRequests = await runJson(
-      args,
-      { cwd: input.cwd },
-      z.array(GitLabMergeRequestSchema),
-    );
+    const project = await client.resolveProject(input.cwd);
+    const mergeRequests = await client.listMergeRequests({
+      cwd: input.cwd,
+      project,
+      state: "opened",
+      search: input.query?.trim() || undefined,
+      limit: input.limit,
+    });
     return mergeRequests.map(toPullRequestSummary);
   }
 
-  /**
-   * `glab issue list` toggles JSON output with `-O/--output` (text|json); its
-   * `-F/--output-format` flag means something else (details|ids|urls) and
-   * silently falls back to the human-readable table for an unknown value. This
-   * differs from `glab mr list`, where `-F/--output` is the JSON toggle. Using
-   * the wrong flag here would emit a text table that fails JSON parsing.
-   */
   async function runIssueList(input: ListIssuesOptions): Promise<IssueSummary[]> {
-    const args = ["issue", "list", "-O", "json"];
-    const query = input.query?.trim();
-    if (query) {
-      args.push("--search", query);
-    }
-    if (typeof input.limit === "number") {
-      args.push("-P", String(input.limit));
-    }
-    const issues = await runJson(args, { cwd: input.cwd }, z.array(GitLabIssueSchema));
+    const project = await client.resolveProject(input.cwd);
+    const issues = await client.listIssues({
+      cwd: input.cwd,
+      project,
+      search: input.query?.trim() || undefined,
+      limit: input.limit,
+    });
     return issues.map(toIssueSummary);
+  }
+
+  /**
+   * GitLab's `squash` is an attribute of the merge request, and python-gitlab's
+   * `merge` action cannot set it, so squash is switched on first. The attribute
+   * stays on the MR if the merge itself then fails.
+   */
+  async function prepareMerge(input: {
+    cwd: string;
+    prNumber: number;
+    mergeMethod: PullRequestMergeMethod;
+  }): Promise<string> {
+    const project = await client.resolveProject(input.cwd);
+    if (input.mergeMethod === "squash") {
+      await client.setSquash({
+        cwd: input.cwd,
+        project,
+        iid: input.prNumber,
+        squash: true,
+      });
+    }
+    return project;
   }
 
   return {
     async isAuthenticated(input: { cwd: string } & ForgeReadOptions): Promise<boolean> {
-      const glabPath = await resolveGlab();
-      if (!glabPath) {
-        return false;
-      }
-      const remoteUrl = await resolveRemoteUrl(input.cwd);
-      const host = remoteUrl ? parseGitLabHostFromRemoteUrl(remoteUrl) : null;
-      if (!host) {
-        return false;
-      }
       try {
-        await runner(["auth", "status", "--hostname", host], { cwd: input.cwd });
+        await client.currentUser(input.cwd);
         return true;
       } catch {
         return false;
@@ -1116,43 +811,37 @@ export function createGitLabService(options: CreateGitLabServiceOptions = {}): F
     },
 
     async getCurrentPullRequestStatus(input): Promise<CurrentPullRequestStatus | null> {
-      try {
-        const mr = await resolveCurrentMergeRequest(input.cwd, input.headRef, input.headSha);
-        if (!mr) {
-          return null;
-        }
-        const [approvals, pipelineChecks] = await Promise.all([
-          fetchApprovals(input.cwd, mr),
-          fetchPipelineChecks(input.cwd, mr),
-        ]);
-        return toCurrentPullRequestStatus(
-          mr,
-          approvals,
-          pipelineChecks.checks,
-          pipelineChecks.pipelineStatus,
-        );
-      } catch (error) {
-        if (error instanceof GlabCommandError && isNoMergeRequestText(error.stderr)) {
-          return null;
-        }
-        throw error;
+      const current = await resolveCurrentMergeRequest(input.cwd, input.headRef, input.headSha);
+      if (!current) {
+        return null;
       }
+      const { mr, project } = current;
+      const [approvals, pipelineChecks] = await Promise.all([
+        fetchApprovals(input.cwd, project, mr),
+        fetchPipelineChecks(input.cwd, project, mr),
+      ]);
+      return toCurrentPullRequestStatus(
+        mr,
+        approvals,
+        pipelineChecks.checks,
+        pipelineChecks.pipelineStatus,
+      );
     },
 
     async getPullRequest(input: GetPullRequestOptions): Promise<PullRequestSummary> {
-      const mr = await viewMergeRequest(input.cwd, String(input.number));
+      const mr = await viewMergeRequest(input.cwd, input.number);
       return toPullRequestSummary(mr);
     },
 
     async getPullRequestHeadRef(input: GetPullRequestOptions): Promise<string> {
-      const mr = await viewMergeRequest(input.cwd, String(input.number));
+      const mr = await viewMergeRequest(input.cwd, input.number);
       return mr.source_branch;
     },
 
     async getPullRequestCheckoutTarget(
       input: GetPullRequestOptions,
     ): Promise<PullRequestCheckoutTarget> {
-      const mr = await viewMergeRequest(input.cwd, String(input.number));
+      const mr = await viewMergeRequest(input.cwd, input.number);
       return {
         number: mr.iid,
         baseRefName: mr.target_branch,
@@ -1182,44 +871,25 @@ export function createGitLabService(options: CreateGitLabServiceOptions = {}): F
     },
 
     async createPullRequest(input: CreatePullRequestOptions): Promise<PullRequestCreateResult> {
-      const args = [
-        "mr",
-        "create",
-        "--title",
-        input.title,
-        "--description",
-        input.body ?? "",
-        "--source-branch",
-        input.head,
-        "--target-branch",
-        input.base,
-        "--yes",
-      ];
-      const stdout = await run(args, { cwd: input.cwd });
-      const url = extractMergeRequestUrl(stdout);
-      if (!url) {
-        throw new Error("GitLab merge request was created but no URL was returned by glab");
-      }
-      const number = parseIidFromUrl(url);
-      if (number === null) {
-        throw new Error(`GitLab merge request URL did not contain an iid: ${url}`);
-      }
-      return { url, number };
+      const created = await client.createMergeRequest({
+        cwd: input.cwd,
+        project: await client.resolveProject(input.cwd),
+        title: input.title,
+        description: input.body ?? "",
+        sourceBranch: input.head,
+        targetBranch: input.base,
+      });
+      return { url: created.webUrl, number: created.iid };
     },
 
     async mergePullRequest(input: MergePullRequestOptions): Promise<PullRequestMergeResult> {
+      assertGitLabMergeMethodSupported(input.mergeMethod);
       assertGitLabDirectMergeReady(input);
-      // `--auto-merge=false` forces an immediate merge: without it glab's default
-      // would schedule "merge when the pipeline succeeds" while a pipeline runs,
-      // turning a direct merge into an auto-merge. Mirrors `gh pr merge` without
-      // `--auto`. The pre-flight guard above stays — both are needed.
-      const args = ["mr", "merge", String(input.prNumber), "--auto-merge=false", "--yes"];
-      if (input.mergeMethod === "squash") {
-        args.push("--squash");
-      } else if (input.mergeMethod === "rebase") {
-        args.push("--rebase");
-      }
-      await run(args, { cwd: input.cwd });
+      const project = await prepareMerge(input);
+      // Omitting `merge_when_pipeline_succeeds` makes GitLab merge now, so a
+      // direct merge never turns into a scheduled auto-merge. The pre-flight
+      // guard above stays: both are needed.
+      await client.merge({ cwd: input.cwd, project, iid: input.prNumber });
       return { success: true };
     },
 
@@ -1232,27 +902,18 @@ export function createGitLabService(options: CreateGitLabServiceOptions = {}): F
         repoName: input.repoName,
       };
       try {
-        const mr = await viewMergeRequest(input.cwd, String(input.prNumber));
-        const projectPath = extractProjectPath(mr.references?.full);
-        if (!projectPath) {
-          return {
-            ...identity,
-            items: [],
-            truncated: false,
-            error: {
-              kind: "not_found",
-              message: "GitLab merge request project path is unavailable",
-            },
-          };
-        }
-        const discussions = await runJson(
-          [
-            "api",
-            `projects/${encodeURIComponent(projectPath)}/merge_requests/${mr.iid}/discussions?per_page=${TIMELINE_PAGE_SIZE}`,
-          ],
-          { cwd: input.cwd },
-          z.array(GitLabDiscussionSchema),
-        );
+        const project = await client.resolveProject(input.cwd);
+        const mr = await client.getMergeRequest({
+          cwd: input.cwd,
+          project,
+          iid: input.prNumber,
+        });
+        const discussions = await client.listDiscussions({
+          cwd: input.cwd,
+          project,
+          iid: mr.iid,
+          perPage: TIMELINE_PAGE_SIZE,
+        });
         const items = discussions
           .flatMap((discussion) =>
             discussion.notes.map((note) => toTimelineComment(note, discussion, mr.web_url)),
@@ -1261,7 +922,7 @@ export function createGitLabService(options: CreateGitLabServiceOptions = {}): F
           .sort(compareTimelineItems);
         const truncated =
           discussions.length >= TIMELINE_PAGE_SIZE
-            ? await hasDiscussionsAfterFirstPage(input.cwd, projectPath, mr.iid)
+            ? await hasDiscussionsAfterFirstPage(input.cwd, project, mr.iid)
             : false;
         return {
           ...identity,
@@ -1270,30 +931,39 @@ export function createGitLabService(options: CreateGitLabServiceOptions = {}): F
           error: null,
         };
       } catch (error) {
-        return { ...identity, items: [], truncated: false, error: mapGlabTimelineError(error) };
+        return { ...identity, items: [], truncated: false, error: mapGitLabTimelineError(error) };
       }
     },
 
     /**
      * Fetches a pipeline's stages/jobs for the drill-down. Addressing it by MR
-     * iid uses `glab ci get --merge-request`, which requires a recent glab
-     * (roughly 1.40+); on an older CLI the command errors and the drill-down
-     * surfaces that failure. The `--pipeline-id` path works on older glab.
+     * iid reads the MR's newest pipeline from the project that pipeline reports,
+     * so a fork or detached MR pipeline resolves where a bare pipeline id run
+     * against the checkout's project would 404.
      */
     async getCheckDetails(input: GetCheckDetailsOptions): Promise<CheckDetails> {
-      // Prefer addressing the change request's head pipeline by iid: glab then
-      // resolves a fork/detached MR pipeline in its source project, which
-      // `--pipeline-id` run in the checkout's target project would 404 on. Fall
-      // back to the pipeline id when no iid is available.
-      const selector =
-        input.changeRequestNumber !== undefined
-          ? ["--merge-request", String(input.changeRequestNumber)]
-          : ["--pipeline-id", String(input.checkRunId)];
-      const pipeline = await runJson(
-        ["ci", "get", ...selector, "--with-job-details", "-F", "json"],
-        { cwd: input.cwd },
-        GitLabPipelineDetailsSchema,
-      );
+      const project = await client.resolveProject(input.cwd);
+      if (input.changeRequestNumber !== undefined) {
+        const pipeline = await client.getLatestMrPipelineWithJobs({
+          cwd: input.cwd,
+          project,
+          iid: input.changeRequestNumber,
+        });
+        if (!pipeline) {
+          throw new Error(
+            `GitLab merge request !${input.changeRequestNumber} has no pipeline to show`,
+          );
+        }
+        return toCheckDetails(pipeline);
+      }
+      if (input.checkRunId === undefined) {
+        throw new Error("GitLab pipeline details need a pipeline id or a merge request number");
+      }
+      const pipeline = await client.getPipelineWithJobs({
+        cwd: input.cwd,
+        project,
+        pipelineId: input.checkRunId,
+      });
       return toCheckDetails(pipeline);
     },
 
@@ -1318,11 +988,11 @@ export function createGitLabService(options: CreateGitLabServiceOptions = {}): F
         shouldFetchIssues ? issuesResult : null,
         shouldFetchMergeRequests ? mergeRequestsResult : null,
       ].filter((result) => result !== null);
-      const unavailableAuthState = getGlabUnavailableSearchAuthState(requestedResults);
+      const unavailableAuthState = getGitLabUnavailableSearchAuthState(requestedResults);
       if (unavailableAuthState) {
         return createUnavailableSearchResult(unavailableAuthState);
       }
-      throwFirstNonGlabAuthSearchRejection(requestedResults);
+      throwFirstNonGitLabAuthSearchRejection(requestedResults);
 
       const items: SearchResult["items"] = [];
       if (shouldFetchIssues && issuesResult.status === "fulfilled") {
@@ -1374,35 +1044,31 @@ export function createGitLabService(options: CreateGitLabServiceOptions = {}): F
     async enablePullRequestAutoMerge(
       input: EnablePullRequestAutoMergeOptions,
     ): Promise<PullRequestAutoMergeResult> {
-      // GitLab's auto-merge is "merge when pipeline succeeds": passing
-      // `--auto-merge` while a pipeline is running schedules the merge instead
-      // of performing it immediately. The merge strategy mirrors mergePullRequest.
+      // GitLab's auto-merge is "merge when pipeline succeeds": setting it while a
+      // pipeline is running schedules the merge instead of performing it now.
+      // The merge strategy mirrors mergePullRequest.
+      assertGitLabMergeMethodSupported(input.mergeMethod);
       assertGitLabAutoMergeEnableReady({ status: input.status });
-      const args = ["mr", "merge", String(input.prNumber), "--auto-merge", "--yes"];
-      if (input.mergeMethod === "squash") {
-        args.push("--squash");
-      } else if (input.mergeMethod === "rebase") {
-        args.push("--rebase");
-      }
-      await run(args, { cwd: input.cwd });
+      const project = await prepareMerge(input);
+      await client.merge({
+        cwd: input.cwd,
+        project,
+        iid: input.prNumber,
+        whenPipelineSucceeds: true,
+      });
       return { success: true };
     },
 
     async disablePullRequestAutoMerge(
       input: DisablePullRequestAutoMergeOptions,
     ): Promise<PullRequestAutoMergeResult> {
-      // `glab mr merge --auto-merge=false` would merge immediately rather than
-      // cancel a scheduled auto-merge, so cancel via the REST endpoint instead.
-      // The `:fullpath` placeholder resolves the project from the cwd's remote.
-      await run(
-        [
-          "api",
-          "--method",
-          "POST",
-          `projects/:fullpath/merge_requests/${input.prNumber}/cancel_merge_when_pipeline_succeeds`,
-        ],
-        { cwd: input.cwd },
-      );
+      // Merging again with the flag off would merge immediately rather than
+      // cancel the scheduled auto-merge, so use the dedicated cancel action.
+      await client.cancelAutoMerge({
+        cwd: input.cwd,
+        project: await client.resolveProject(input.cwd),
+        iid: input.prNumber,
+      });
       return { success: true };
     },
 
