@@ -29,9 +29,10 @@ git clone https://github.com/quickwind/wukong.git
 cd wukong
 git checkout internal-edition
 
-# Do not add --ignore-scripts: postinstall applies the patches in patches/,
-# and the web UI is built from the patched libraries.
-npm ci
+# --ignore-scripts skips native builds the packages do not need. The second command applies
+# the patches in patches/, which the web UI requires, so do not skip it.
+npm ci --ignore-scripts
+npm run postinstall
 
 mkdir -p dist-npm
 for p in highlight relay protocol client plugin server cli; do

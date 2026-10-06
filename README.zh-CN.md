@@ -29,9 +29,10 @@ git clone https://github.com/quickwind/wukong.git
 cd wukong
 git checkout internal-edition
 
-# 不要加 --ignore-scripts：postinstall 会应用 patches/ 里的补丁，
-# Web UI 要用打过补丁的库来构建。
-npm ci
+# --ignore-scripts 会跳过打包用不到的原生编译。第二条命令应用 patches/ 里的补丁，
+# Web UI 依赖这些补丁，所以不能省略。
+npm ci --ignore-scripts
+npm run postinstall
 
 mkdir -p dist-npm
 for p in highlight relay protocol client plugin server cli; do

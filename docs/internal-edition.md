@@ -163,7 +163,7 @@ Pick one registry:
 
 - **GitHub Packages.** No extra account and no secret. The scope must equal the repository owner, lowercase. A person installing needs a token with `read:packages`, even for a public package.
 - **npmjs.com.** Needs an npm organization that owns the scope and a granular access token with publish permission. Public packages publish the company edition to everyone.
-- **An internal registry** such as Nexus or Artifactory. GitHub-hosted runners reach only the internet, so you need a self-hosted runner that can reach the registry: change `runs-on` in the `publish` job, and set `NPM_REGISTRY` and `NPM_TOKEN`.
+- **An internal registry** such as Nexus or Artifactory. GitHub-hosted runners reach only the internet, so you need a self-hosted runner that can reach the registry: change `runs-on` in the `publish` job, and set `NPM_REGISTRY` and `NPM_TOKEN`. The server tarball is about 15 MB; raise the registry's upload limit above 20 MB, because a registry that rejects it with `413` leaves the release half published (Verdaccio's default is 10 MB).
 
 ### Before the first release
 
