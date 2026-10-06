@@ -45,7 +45,7 @@ export function isLocalOnlyListen(listen: string): boolean {
 export function assertEditionListen(listen: string, setting: string): void {
   if (INTERNAL_EDITION.loopbackOnly && !isLocalOnlyListen(listen)) {
     throw new Error(
-      `${setting} "${listen}" is not a loopback address. This internal edition of Paseo only listens on 127.0.0.1, ::1, localhost, or a local socket.`,
+      `${setting} "${listen}" is not a loopback address. This internal edition of Wukong only listens on 127.0.0.1, ::1, localhost, or a local socket.`,
     );
   }
 }

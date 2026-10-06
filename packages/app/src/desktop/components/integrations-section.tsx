@@ -9,9 +9,11 @@ import { useCliInstall } from "@/desktop/hooks/use-install-status";
 import { SettingsSection } from "@/components/settings/headings/settings-section";
 import { settingsStyles } from "@/styles/settings";
 import { openExternalUrl } from "@/utils/open-external-url";
+import { INTERNAL_EDITION_BRAND } from "@getpaseo/protocol/internal-edition";
 import { shouldUseDesktopDaemon } from "@/desktop/daemon/desktop-daemon";
 
-const CLI_DOCS_URL = "https://paseo.sh/docs/cli";
+// Internal edition: CLI docs live in the company repository.
+const CLI_DOCS_URL = INTERNAL_EDITION_BRAND.repositoryUrl;
 
 export function IntegrationsSection() {
   const { t } = useTranslation();

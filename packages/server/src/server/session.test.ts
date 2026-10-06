@@ -1116,7 +1116,7 @@ describe("legacy GitHub RPCs with GitHub disabled", () => {
           featuresEnabled: false,
           githubFeaturesEnabled: false,
           requestId: "req-gh-search",
-          error: "GitHub is disabled in this internal edition of Paseo",
+          error: "GitHub is disabled in this internal edition of Wukong",
         }),
       },
     ]);
@@ -1139,7 +1139,7 @@ describe("legacy GitHub RPCs with GitHub disabled", () => {
           requestId: "req-gh-repos",
           repositories: [],
           available: true,
-          error: "GitHub is disabled in this internal edition of Paseo",
+          error: "GitHub is disabled in this internal edition of Wukong",
         },
       },
     ]);
@@ -1166,7 +1166,7 @@ describe("legacy GitHub RPCs with GitHub disabled", () => {
           repo: "https://gitlab.com/other/anything.git",
           checkoutPath: null,
           project: null,
-          error: "GitHub clone is disabled in this internal edition of Paseo",
+          error: "GitHub clone is disabled in this internal edition of Wukong",
         },
       },
     ]);

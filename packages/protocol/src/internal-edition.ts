@@ -34,7 +34,23 @@ export function isForgeAllowedByEdition(forgeId: string): boolean {
 
 export class CloudServiceDisabledError extends Error {
   constructor(service: string) {
-    super(`${service} is disabled in this internal edition of Paseo`);
+    super(`${service} is disabled in this internal edition of Wukong`);
     this.name = "CloudServiceDisabledError";
   }
 }
+
+/**
+ * Internal edition brand. User-visible names and links read from here; code identifiers,
+ * env vars (`PASEO_*`), `~/.paseo`, and protocol names keep the upstream name.
+ */
+export const INTERNAL_EDITION_BRAND = {
+  name: "Wukong",
+  cliName: "wukong",
+  repositoryUrl: "https://github.com/quickwind/wukong",
+  issuesUrl: "https://github.com/quickwind/wukong/issues/new",
+  upstream: {
+    name: "Paseo",
+    url: "https://github.com/getpaseo/paseo",
+    license: "Apache-2.0",
+  },
+} as const;

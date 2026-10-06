@@ -1,5 +1,5 @@
 import { pairCommand } from "./commands/daemon/pair.js";
-import { INTERNAL_EDITION } from "@getpaseo/protocol/internal-edition";
+import { INTERNAL_EDITION, INTERNAL_EDITION_BRAND } from "@getpaseo/protocol/internal-edition";
 import { Command, Option } from "commander";
 import { createAgentCommand } from "./commands/agent/index.js";
 import { createDaemonCommand } from "./commands/daemon/index.js";
@@ -47,8 +47,11 @@ export function createCli(): Command {
   const program = new Command();
 
   program
-    .name("paseo")
-    .description("Paseo CLI - control your AI coding agents from the command line")
+    // Internal edition: `wukong` is the command name; the `paseo` bin stays as an alias.
+    .name(INTERNAL_EDITION_BRAND.cliName)
+    .description(
+      `${INTERNAL_EDITION_BRAND.name} CLI - control your AI coding agents from the command line`,
+    )
     .version(VERSION, "-v, --version", "output the version number")
     // Global output options
     .option("-o, --format <format>", "output format: table, json, yaml", "table")

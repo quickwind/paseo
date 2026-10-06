@@ -67,7 +67,8 @@ function resolveSecretFile(params) {
 
 const variants = {
   production: {
-    name: "Paseo",
+    // Internal edition: brand name; package IDs keep the upstream value.
+    name: "Wukong",
     packageId: "sh.paseo",
     googleServicesFile: resolveSecretFile({
       envKey: "GOOGLE_SERVICES_FILE_PROD",
@@ -79,7 +80,7 @@ const variants = {
     }),
   },
   development: {
-    name: "Paseo Debug",
+    name: "Wukong Debug",
     packageId: "sh.paseo.debug",
     googleServicesFile: resolveSecretFile({
       envKey: "GOOGLE_SERVICES_FILE_DEBUG",

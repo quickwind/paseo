@@ -11,7 +11,7 @@ import {
 import { useRouter } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { StyleSheet, useUnistyles } from "react-native-unistyles";
+import { StyleSheet, useUnistyles, withUnistyles } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { Buffer } from "buffer";
@@ -41,6 +41,7 @@ import {
   PanelLeft,
   MessageSquare,
   ChevronRight,
+  ExternalLink,
 } from "lucide-react-native";
 import { DropdownTrigger } from "@/components/ui/dropdown-trigger";
 import { ComboboxTrigger } from "@/components/ui/combobox-trigger";
@@ -134,7 +135,9 @@ import {
 import { useLastWorkspaceSelection } from "@/stores/navigation-active-workspace-store";
 import { returnFromSettings, type SettingsView } from "@/navigation/settings-navigation";
 import { isNative, isWeb } from "@/constants/platform";
-import { INTERNAL_EDITION } from "@getpaseo/protocol/internal-edition";
+import type { Theme } from "@/styles/theme";
+import { openExternalUrl } from "@/utils/open-external-url";
+import { INTERNAL_EDITION, INTERNAL_EDITION_BRAND } from "@getpaseo/protocol/internal-edition";
 
 // ---------------------------------------------------------------------------
 // View model
@@ -476,6 +479,7 @@ function AboutSection({ appVersion, appVersionText, isDesktopApp }: AboutSection
           </View>
           {INTERNAL_EDITION.cloudServicesEnabled ? <WhatsNewRow /> : null}
           {isDesktopApp && INTERNAL_EDITION.cloudServicesEnabled ? <DesktopAppUpdateRow /> : null}
+          <UpstreamProjectRow />
         </View>
       </SettingsSection>
       <ConnectedHostsSection clientVersion={appVersion} />
@@ -483,6 +487,39 @@ function AboutSection({ appVersion, appVersionText, isDesktopApp }: AboutSection
         <CommunityLinks />
       </View>
     </>
+  );
+}
+
+const ThemedExternalLink = withUnistyles(ExternalLink);
+const upstreamLinkIconMapping = (theme: Theme) => ({
+  color: theme.colors.foregroundMuted,
+  size: theme.iconSize.sm,
+});
+
+function openUpstreamProject() {
+  void openExternalUrl(INTERNAL_EDITION_BRAND.upstream.url);
+}
+
+// Internal edition: credit the upstream project and its license.
+function UpstreamProjectRow() {
+  const { t } = useTranslation();
+  return (
+    <Pressable
+      style={[settingsStyles.row, settingsStyles.rowBorder]}
+      onPress={openUpstreamProject}
+      accessibilityRole="link"
+      testID="settings-upstream-project"
+    >
+      <View style={settingsStyles.rowContent}>
+        <Text style={settingsStyles.rowTitle}>
+          {t("settings.about.basedOn", { name: INTERNAL_EDITION_BRAND.upstream.name })}
+        </Text>
+        <Text style={settingsStyles.rowHint}>
+          {t("settings.about.basedOnHint", { license: INTERNAL_EDITION_BRAND.upstream.license })}
+        </Text>
+      </View>
+      <ThemedExternalLink uniProps={upstreamLinkIconMapping} />
+    </Pressable>
   );
 }
 

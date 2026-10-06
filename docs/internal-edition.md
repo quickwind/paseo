@@ -1,6 +1,6 @@
 # Internal edition
 
-This fork runs only on company machines. It has no device pairing, Paseo itself sends nothing to cloud services, the only providers are Claude Code and Devin CLI, and the only git forge is the company's self-hosted GitLab.
+This fork, branded Wukong, runs only on company machines. It has no device pairing, Wukong itself sends nothing to cloud services, the only providers are Claude Code and Devin CLI, and the only git forge is the company's self-hosted GitLab.
 
 ## Where the policy lives
 
@@ -15,6 +15,14 @@ This fork runs only on company machines. It has no device pairing, Paseo itself 
 | `customProvidersEnabled`                | `false`               | Hides "Add provider" in host settings                                                                                  |
 | `loopbackOnly`                          | `true`                | Daemon and service proxy refuse any listen address outside loopback or a local socket                                  |
 | `forgeRepositoryClone`                  | `true`                | Add Project and `paseo clone` use the GitLab forge RPCs instead of the GitHub ones                                     |
+
+## Brand
+
+`INTERNAL_EDITION_BRAND` in the same module holds the name, the CLI name, and the repository and upstream links. Only what a person sees uses the brand: UI copy in every locale, the logo, the web title and manifest, the CLI's `wukong` command, and the help and issue links. Code identifiers, `PASEO_*` env vars, `~/.paseo`, package names, and protocol names keep the upstream name, so upstream merges stay small. The `paseo` command still works as an alias.
+
+The logo geometry lives in `packages/app/src/components/icons/wukong-logo-geometry.ts`; the logo component and the web splash mask both draw from it. Favicons drop the ears and use heavier strokes so the mark holds at 16 px.
+
+When you merge upstream, new UI copy arrives with "Paseo" in it. Replace the brand name inside string values in `packages/app/src/i18n/resources/*.ts`, never in keys such as `inPaseo`.
 
 ## What is blocked
 
@@ -136,4 +144,4 @@ Dictation and voice use local models only, and the daemon does not download them
 
 ## Licensing
 
-Paseo is Apache-2.0. Keep `LICENSE` in every copy you distribute, keep the upstream copyright line, and keep the `Internal edition:` comments, which mark the files this fork changed (Apache-2.0 §4(b)). The license grants no right to the Paseo name or logo (§6); rebrand before you ship builds outside the company.
+Wukong is built on Paseo, which is Apache-2.0. Keep `LICENSE` in every copy you distribute, keep the upstream copyright line, and keep the `Internal edition:` comments, which mark the files this fork changed (Apache-2.0 §4(b)). The license grants no right to the Paseo name or logo (§6), which is why user-visible branding is Wukong. Settings → About credits Paseo and its license. "Wukong" is a common name (for example _Black Myth: Wukong_); have legal check it before any release outside the company.

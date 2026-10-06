@@ -26,7 +26,7 @@ import { openExternalUrl } from "@/utils/open-external-url";
 import { isFdroidBuild } from "@/constants/build-profile";
 import { isWeb, isNative } from "@/constants/platform";
 import { isElectronRuntime } from "@/desktop/host";
-import { INTERNAL_EDITION } from "@getpaseo/protocol/internal-edition";
+import { INTERNAL_EDITION, INTERNAL_EDITION_BRAND } from "@getpaseo/protocol/internal-edition";
 
 const PAIRING_ACTION_KEYS = new Set(["scan-qr", "paste-pairing-link"]);
 
@@ -192,7 +192,7 @@ export function WelcomeScreen({ onHostAdded }: WelcomeScreenProps) {
   }, [router]);
 
   const handleOpenPaseoSite = useCallback(() => {
-    void openExternalUrl("https://paseo.sh");
+    void openExternalUrl(INTERNAL_EDITION_BRAND.repositoryUrl);
   }, []);
 
   const handleOpenSettings = useCallback(() => {
@@ -302,7 +302,7 @@ export function WelcomeScreen({ onHostAdded }: WelcomeScreenProps) {
             <Text style={styles.subtitle}>{t("onboarding.subtitle")}</Text>
             {isNative ? (
               <Pressable style={styles.setupLink} onPress={handleOpenPaseoSite}>
-                <Text style={styles.setupLinkText}>paseo.sh</Text>
+                <Text style={styles.setupLinkText}>GitHub</Text>
                 <ExternalLink size={14} color={theme.colors.accent} />
               </Pressable>
             ) : null}
