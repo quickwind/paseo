@@ -24,6 +24,7 @@ import { hashDaemonPassword } from "./auth.js";
 import { resolveSpeechConfig } from "./speech/speech-config-resolver.js";
 import {
   INTERNAL_EDITION,
+  INTERNAL_EDITION_ALLOWED_FORGE_IDS,
   INTERNAL_EDITION_ALLOWED_PROVIDER_IDS,
 } from "@getpaseo/protocol/internal-edition";
 import { assertEditionListen } from "./internal-edition.js";
@@ -657,6 +658,9 @@ export function resolveConfigFromPersisted(
     mcpDebug: env.MCP_DEBUG === "1",
     isDev: resolvePaseoNodeEnv(env) === "development",
     allowedProviderIds: INTERNAL_EDITION_ALLOWED_PROVIDER_IDS,
+    // Internal edition: only the company GitLab (from `forge.gitlab`) is a forge.
+    allowedForgeIds: INTERNAL_EDITION_ALLOWED_FORGE_IDS,
+    forge: persisted.forge,
     agentStoragePath: path.join(paseoHome, "agents"),
     staticDir: "public",
     agentClients: {},

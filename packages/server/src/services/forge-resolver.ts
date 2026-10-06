@@ -7,6 +7,7 @@ import {
   createForgeService,
   defaultForgeRegistry,
   probeRegisteredForgeHost,
+  type ForgeRegistry,
 } from "./forge-registry.js";
 
 export interface ForgeResolution {
@@ -22,6 +23,11 @@ export interface ForgeResolution {
 export type ForgeHostProbe = (host: string) => Promise<string | null>;
 
 export interface CreateForgeResolverOptions {
+  /**
+   * Internal edition: registry that owns host matching and probing for this
+   * resolver. Defaults to the built-in registry with every upstream adapter.
+   */
+  registry?: ForgeRegistry;
   resolveRemoteUrl?: (cwd: string) => Promise<string | null>;
   createService?: (forge: string) => ForgeService | null;
   probeForge?: ForgeHostProbe;
@@ -62,9 +68,15 @@ export function forgeForHost(host: string): string | null {
 }
 
 export function createForgeResolver(options: CreateForgeResolverOptions = {}): ForgeResolver {
+  const registry = options.registry ?? defaultForgeRegistry;
+  const matchForgeHost = (host: string): string | null => registry.matchHost(host);
   const resolveRemoteUrl = options.resolveRemoteUrl ?? defaultResolveRemoteUrl;
-  const create = options.createService ?? createForgeService;
-  const probeForge = options.probeForge ?? probeRegisteredForgeHost;
+  const create =
+    options.createService ??
+    (options.registry ? (forge: string) => registry.create(forge) : createForgeService);
+  const probeForge =
+    options.probeForge ??
+    (options.registry ? (host: string) => registry.probeHost(host) : probeRegisteredForgeHost);
   const resolveSsh = options.resolveSshHostname ?? resolveSshHostname;
   const now = options.now ?? Date.now;
   const services = new Map<string, ForgeService>();
@@ -170,7 +182,7 @@ export function createForgeResolver(options: CreateForgeResolverOptions = {}): F
     if (!host) {
       return null;
     }
-    const forge = forgeForHost(host) ?? readFreshProbe(host) ?? null;
+    const forge = matchForgeHost(host) ?? readFreshProbe(host) ?? null;
     if (!forge) {
       return null;
     }
@@ -187,7 +199,7 @@ export function createForgeResolver(options: CreateForgeResolverOptions = {}): F
     if (!location) {
       return null;
     }
-    const directForge = forgeForHost(location.host);
+    const directForge = matchForgeHost(location.host);
     if (directForge) {
       return buildResolution(directForge, location.host);
     }
@@ -231,7 +243,7 @@ export function createForgeResolver(options: CreateForgeResolverOptions = {}): F
       return { host: location.host };
     }
 
-    const resolvedForge = forgeForHost(resolvedHost);
+    const resolvedForge = matchForgeHost(resolvedHost);
     if (resolvedForge) {
       return { host: resolvedHost, forge: resolvedForge };
     }

@@ -122,6 +122,8 @@ import { VoiceAssistantWebSocketServer } from "./websocket-server.js";
 import { WorkspaceSetupRuntime } from "./workspace-setup-runtime.js";
 import { createWorkspaceLabelService } from "./workspace-labels/index.js";
 import { createGitHubService } from "../services/github-service.js";
+import { createGatedForgeRegistry, type ForgeRegistry } from "../services/forge-registry.js";
+import type { GitLabForgeConfig } from "../services/gitlab-forge-config.js";
 import { createPaseoWorktree as createRegisteredPaseoWorktree } from "./paseo-worktree-service.js";
 import { createWorkspaceProvisioningService } from "./session/workspace-provisioning/workspace-provisioning-service.js";
 import { createPaseoWorktreeWorkflow } from "./worktree-session.js";
@@ -422,6 +424,13 @@ export interface PaseoDaemonConfig {
   isDev?: boolean;
   /** Internal edition provider allowlist. Unset means every registered provider. */
   allowedProviderIds?: readonly string[];
+  /**
+   * Internal edition forge allowlist. Unset means every built-in forge adapter,
+   * recognized by its usual hosts and probes.
+   */
+  allowedForgeIds?: readonly string[];
+  /** Internal edition: location of the company GitLab. Without it no forge resolves. */
+  forge?: { gitlab?: GitLabForgeConfig };
   agentClients: Partial<Record<AgentProvider, AgentClient>>;
   agentStoragePath: string;
   relayEnabled?: boolean;
@@ -592,6 +601,17 @@ function createInitialMutableDaemonConfig(config: PaseoDaemonConfig): MutableDae
   }
 
   return initialConfig;
+}
+
+// Internal edition: the gated registry is how the forge allowlist reaches the resolver.
+function resolveForgeRegistry(config: PaseoDaemonConfig): ForgeRegistry | undefined {
+  if (!config.allowedForgeIds) {
+    return undefined;
+  }
+  return createGatedForgeRegistry({
+    allowedForgeIds: config.allowedForgeIds,
+    gitlab: config.forge?.gitlab,
+  });
 }
 
 export async function createPaseoDaemon(
@@ -914,6 +934,8 @@ export async function createPaseoDaemon(
     logger,
     paseoHome: config.paseoHome,
     worktreesRoot: config.worktreesRoot,
+    // Internal edition: only allowlisted forges resolve (see docs/internal-edition.md).
+    forgeRegistry: resolveForgeRegistry(config),
     deps: {
       forgeOverrides: { github },
     },

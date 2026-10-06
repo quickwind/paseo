@@ -4,6 +4,7 @@ import { createGitHubService, probeGitHubHost } from "./github-service.js";
 import type { ForgeService } from "./forge-service.js";
 import { createGiteaService, resolveGiteaFamilyForge } from "./gitea-service.js";
 import { createGitLabService, probeGitLabHost } from "./gitlab-service.js";
+import { matchesGitLabForgeHost, type GitLabForgeConfig } from "./gitlab-forge-config.js";
 
 export type ForgeServiceFactory = () => ForgeService;
 
@@ -130,7 +131,7 @@ function matchesCloudHost(forgeId: string): ((host: string) => boolean) | undefi
   return (host) => normalized.has(normalizeHost(host));
 }
 
-export const defaultForgeRegistry = new ForgeRegistry([
+const DEFAULT_FORGE_ENTRIES: ReadonlyArray<readonly [string, ForgeAdapterRegistration]> = [
   // GitHub Enterprise Server is recognized at runtime by probeHost, exactly like
   // self-hosted GitLab/Gitea: github.com short-circuits via matchHost, so the
   // probe only runs on non-cloud hosts. The PR-status poll gates on the resolver
@@ -167,7 +168,44 @@ export const defaultForgeRegistry = new ForgeRegistry([
     },
   ],
   ["codeberg", { createService: createGiteaService, matchesHost: matchesCloudHost("codeberg") }],
-]);
+];
+
+export const defaultForgeRegistry = new ForgeRegistry(DEFAULT_FORGE_ENTRIES);
+
+export interface GatedForgeRegistryOptions {
+  allowedForgeIds: readonly string[];
+  /** Location of the company GitLab. Without it the gitlab adapter is not registered. */
+  gitlab?: GitLabForgeConfig;
+}
+
+/**
+ * Internal edition: a registry holding only allowlisted adapters, so upstream
+ * adapter code stays untouched and the gate lives at registration. GitLab is
+ * recognized only by the configured `url` and `sshHost` hosts and is never
+ * probed; GitHub, gitlab.com, Gitea, Forgejo and Codeberg hosts resolve to no
+ * forge and trigger no request.
+ */
+export function createGatedForgeRegistry(options: GatedForgeRegistryOptions): ForgeRegistry {
+  const allowed = new Set(options.allowedForgeIds);
+  const registry = new ForgeRegistry();
+  for (const [forge, adapter] of DEFAULT_FORGE_ENTRIES) {
+    if (!allowed.has(forge)) {
+      continue;
+    }
+    if (forge === "gitlab") {
+      const gitlab = options.gitlab;
+      if (gitlab) {
+        registry.register("gitlab", {
+          createService: () => createGitLabService(),
+          matchesHost: (host) => matchesGitLabForgeHost(gitlab, host),
+        });
+      }
+      continue;
+    }
+    registry.register(forge, adapter);
+  }
+  return registry;
+}
 
 export function createForgeService(forge: string): ForgeService | null {
   return defaultForgeRegistry.create(forge);

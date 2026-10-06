@@ -6,13 +6,14 @@ This fork runs only on company machines. It has no device pairing, Paseo itself 
 
 `packages/protocol/src/internal-edition.ts` holds every switch. The server, app, CLI, and desktop all read it, so this fork changes behavior in one place instead of patching each feature. Each site that enforces the policy has a comment starting with `Internal edition:`. Run `rg "INTERNAL_EDITION|Internal edition:"` to find them all when you merge upstream.
 
-| Switch                                  | Value                 | Effect                                                                                |
-| --------------------------------------- | --------------------- | ------------------------------------------------------------------------------------- |
-| `INTERNAL_EDITION_ALLOWED_PROVIDER_IDS` | `["claude", "devin"]` | The daemon leaves every other provider out of the registry (built-in, plugin, custom) |
-| `pairingEnabled`                        | `false`               | Relay locked off; pairing UI, `paseo pair`, and `paseo daemon pair` removed           |
-| `cloudServicesEnabled`                  | `false`               | Blocks every Paseo-initiated cloud request listed below                               |
-| `customProvidersEnabled`                | `false`               | Hides "Add provider" in host settings                                                 |
-| `loopbackOnly`                          | `true`                | Daemon and service proxy refuse any listen address outside loopback or a local socket |
+| Switch                                  | Value                 | Effect                                                                                                                 |
+| --------------------------------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `INTERNAL_EDITION_ALLOWED_PROVIDER_IDS` | `["claude", "devin"]` | The daemon leaves every other provider out of the registry (built-in, plugin, custom)                                  |
+| `INTERNAL_EDITION_ALLOWED_FORGE_IDS`    | `["gitlab"]`          | The daemon registers only the GitLab adapter, and only for the hosts in `forge.gitlab`; every other host is "no forge" |
+| `pairingEnabled`                        | `false`               | Relay locked off; pairing UI, `paseo pair`, and `paseo daemon pair` removed                                            |
+| `cloudServicesEnabled`                  | `false`               | Blocks every Paseo-initiated cloud request listed below                                                                |
+| `customProvidersEnabled`                | `false`               | Hides "Add provider" in host settings                                                                                  |
+| `loopbackOnly`                          | `true`                | Daemon and service proxy refuse any listen address outside loopback or a local socket                                  |
 
 ## What is blocked
 

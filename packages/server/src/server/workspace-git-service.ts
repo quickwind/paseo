@@ -35,7 +35,7 @@ import type {
   PullRequestCheck,
   PullRequestMergeable,
 } from "../services/forge-service.js";
-import { createForgeService } from "../services/forge-registry.js";
+import { createForgeService, type ForgeRegistry } from "../services/forge-registry.js";
 import {
   createForgeResolver,
   type ForgeResolution,
@@ -397,6 +397,8 @@ interface WorkspaceGitServiceOptions {
   paseoHome: string;
   worktreesRoot?: string;
   fileObserver?: FileObserver;
+  /** Internal edition: gated forge registry. Unset uses every built-in adapter. */
+  forgeRegistry?: ForgeRegistry;
   deps?: Partial<WorkspaceGitServiceDependencies>;
 }
 
@@ -643,8 +645,12 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
       this.fileObserver.subscribe.bind(this.fileObserver),
       options.deps,
     );
+    const forgeRegistry = options.forgeRegistry;
     this.forgeResolver = createForgeResolver({
-      createService: (forge) => this.deps.forgeOverrides?.[forge] ?? createForgeService(forge),
+      registry: forgeRegistry,
+      createService: (forge) =>
+        this.deps.forgeOverrides?.[forge] ??
+        (forgeRegistry ? forgeRegistry.create(forge) : createForgeService(forge)),
     });
   }
 

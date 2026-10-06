@@ -1,7 +1,12 @@
 import { FORGE_IDS } from "@getpaseo/protocol/forge-manifest";
 import { describe, expect, it, vi } from "vitest";
 
-import { createForgeService, defaultForgeRegistry, ForgeRegistry } from "./forge-registry.js";
+import {
+  createForgeService,
+  createGatedForgeRegistry,
+  defaultForgeRegistry,
+  ForgeRegistry,
+} from "./forge-registry.js";
 import { createGitHubService } from "./github-service.js";
 
 describe("forge registry", () => {
@@ -131,5 +136,46 @@ describe("forge registry", () => {
     } finally {
       warn.mockRestore();
     }
+  });
+
+  // Internal edition: the gate sits at registration, not inside adapters.
+  describe("gated registry (internal edition)", () => {
+    const gitlab = { url: "https://git.corp.example/", sshHost: "ssh.corp.example:2222" };
+
+    it("registers only the allowlisted forge and recognizes only the configured hosts", async () => {
+      const registry = createGatedForgeRegistry({ allowedForgeIds: ["gitlab"], gitlab });
+
+      expect(registry.ids()).toEqual(["gitlab"]);
+      expect(registry.matchHost("git.corp.example")).toBe("gitlab");
+      expect(registry.matchHost("GIT.corp.example.")).toBe("gitlab");
+      expect(registry.matchHost("ssh.corp.example")).toBe("gitlab");
+      for (const host of [
+        "github.com",
+        "gitlab.com",
+        "gitea.com",
+        "codeberg.org",
+        "ghe.corp.example",
+        "other.corp.example",
+      ]) {
+        expect(registry.matchHost(host)).toBeNull();
+      }
+      await expect(registry.probeHost("ghe.corp.example")).resolves.toBeNull();
+      await expect(registry.probeHost("git.corp.example")).resolves.toBeNull();
+    });
+
+    it("resolves no forge when forge.gitlab is not configured", () => {
+      const registry = createGatedForgeRegistry({ allowedForgeIds: ["gitlab"] });
+
+      expect(registry.ids()).toEqual([]);
+      expect(registry.matchHost("gitlab.com")).toBeNull();
+      expect(registry.create("gitlab")).toBeNull();
+    });
+
+    it("leaves the built-in registry untouched", () => {
+      createGatedForgeRegistry({ allowedForgeIds: ["gitlab"], gitlab });
+
+      expect(defaultForgeRegistry.matchHost("github.com")).toBe("github");
+      expect(defaultForgeRegistry.matchHost("git.corp.example")).toBeNull();
+    });
   });
 });

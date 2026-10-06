@@ -5,6 +5,12 @@
 
 export const INTERNAL_EDITION_ALLOWED_PROVIDER_IDS: readonly string[] = ["claude", "devin"];
 
+/**
+ * Git forges that exist. Only the company's self-hosted GitLab, whose location
+ * comes from the daemon's `forge.gitlab` config; every other host is "no forge".
+ */
+export const INTERNAL_EDITION_ALLOWED_FORGE_IDS: readonly string[] = ["gitlab"];
+
 export const INTERNAL_EDITION = {
   /** QR/link pairing, the relay, and the Hub are unavailable. */
   pairingEnabled: false,
@@ -18,6 +24,10 @@ export const INTERNAL_EDITION = {
 
 export function isProviderAllowedByEdition(providerId: string): boolean {
   return INTERNAL_EDITION_ALLOWED_PROVIDER_IDS.includes(providerId);
+}
+
+export function isForgeAllowedByEdition(forgeId: string): boolean {
+  return INTERNAL_EDITION_ALLOWED_FORGE_IDS.includes(forgeId);
 }
 
 export class CloudServiceDisabledError extends Error {

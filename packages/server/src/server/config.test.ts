@@ -214,3 +214,60 @@ test("loads private plugin registry settings through the configuration boundary"
     await rm(home, { recursive: true, force: true });
   }
 });
+
+// Internal edition: the company GitLab is configured in config.json.
+describe("forge.gitlab", () => {
+  afterEach(async () => {
+    await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+  });
+
+  async function loadWithForge(forge: unknown) {
+    const paseoHome = await mkdtemp(path.join(os.tmpdir(), "paseo-config-forge-"));
+    roots.push(paseoHome);
+    await writeFile(path.join(paseoHome, "config.json"), JSON.stringify({ forge }));
+    return () => loadConfig(paseoHome, { env: {} });
+  }
+
+  test("loads the GitLab location and allows only the gitlab forge", async () => {
+    const load = await loadWithForge({
+      gitlab: {
+        url: "https://git.corp.example",
+        sshHost: "git.corp.example:2222",
+        configSection: "corp",
+        command: ["gitlab"],
+      },
+    });
+
+    const config = load();
+
+    expect(config.allowedForgeIds).toEqual(["gitlab"]);
+    expect(config.forge?.gitlab).toEqual({
+      url: "https://git.corp.example",
+      sshHost: "git.corp.example:2222",
+      configSection: "corp",
+      command: ["gitlab"],
+    });
+  });
+
+  test("leaves forge unset when nothing is configured", async () => {
+    const paseoHome = await mkdtemp(path.join(os.tmpdir(), "paseo-config-forge-none-"));
+    roots.push(paseoHome);
+
+    const config = loadConfig(paseoHome, { env: {} });
+
+    expect(config.forge?.gitlab).toBeUndefined();
+    expect(config.allowedForgeIds).toEqual(["gitlab"]);
+  });
+
+  test("fails at load with a clear message for an invalid url", async () => {
+    const load = await loadWithForge({ gitlab: { url: "http://git.corp.example" } });
+
+    expect(load).toThrow(/forge\.gitlab\.url must use https/);
+  });
+
+  test("fails at load when the url is missing", async () => {
+    const load = await loadWithForge({ gitlab: { sshHost: "git.corp.example" } });
+
+    expect(load).toThrow(/forge/);
+  });
+});

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createForgeService } from "./forge-registry.js";
+import { createForgeService, createGatedForgeRegistry } from "./forge-registry.js";
 import { createForgeResolver, forgeForHost, parseRemoteHost } from "./forge-resolver.js";
 
 function createSshHostnameResolver(hostnameByAlias: Record<string, string | null>) {
@@ -372,5 +372,43 @@ describe("createForgeResolver", () => {
     expect(a).toMatchObject({ forge: "gitlab", host: "git.acme.internal" });
     expect(b).toMatchObject({ forge: "gitlab", host: "git.acme.internal" });
     expect(probeForge).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Internal edition: only the configured GitLab host is a forge.
+describe("createForgeResolver with the gated registry", () => {
+  const registry = createGatedForgeRegistry({
+    allowedForgeIds: ["gitlab"],
+    gitlab: { url: "https://git.corp.example", sshHost: "ssh.corp.example:2222" },
+  });
+
+  function resolverFor(remoteUrl: string) {
+    const probeForge = vi.fn(async () => "github");
+    const resolver = createForgeResolver({
+      registry,
+      resolveRemoteUrl: async () => remoteUrl,
+      resolveSshHostname: resolveSshHostnameAsLiteralHost,
+    });
+    return { resolver, probeForge };
+  }
+
+  it.each([
+    ["scp", "git@git.corp.example:group/sub/project.git"],
+    ["ssh with a port", "ssh://git@ssh.corp.example:2222/group/sub/project.git"],
+    ["https", "https://git.corp.example/group/sub/project.git"],
+  ])("resolves a %s remote on the configured host to gitlab", async (_label, remote) => {
+    const { resolver } = resolverFor(remote);
+    await expect(resolver.resolve("/repo")).resolves.toMatchObject({ forge: "gitlab" });
+  });
+
+  it.each([
+    "git@github.com:owner/repo.git",
+    "https://gitlab.com/group/project.git",
+    "https://gitea.com/owner/repo.git",
+    "https://codeberg.org/owner/repo.git",
+    "git@ghe.corp.example:owner/repo.git",
+  ])("treats %s as no forge", async (remote) => {
+    const { resolver } = resolverFor(remote);
+    await expect(resolver.resolve("/repo")).resolves.toBeNull();
   });
 });
