@@ -75,7 +75,10 @@ export const FORGE_DEFINITIONS: ForgeDefinition[] = [
     changeRequestNumberPrefix: "!",
     issueNumberPrefix: "#",
     iconKind: "gitlab",
-    signIn: { cli: "glab", command: "glab auth login", hostnameFlag: "--hostname" },
+    // Internal edition: GitLab is reached through the python-gitlab CLI, which has
+    // no login command. Credentials live in ~/.python-gitlab.cfg, so the hint
+    // shows the command that verifies the setup (docs/internal-edition.md).
+    signIn: { cli: "python-gitlab", command: "gitlab current-user get" },
     cloudHosts: ["gitlab.com"],
   },
   {

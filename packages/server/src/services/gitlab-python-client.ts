@@ -55,6 +55,8 @@ import {
 //    option win over `config.url`; `_merge_auth` falls back to the section.
 //    Without `-g`, the `[global] default` section supplies the token, so set
 //    `forge.gitlab.configSection` when the default section is another server.
+//    The section must still define `url`: GitlabConfigParser reads it first and
+//    fails without it, even though the URL option then wins.
 // 3. `-o json` prints `obj.attributes` (the raw REST object) for get and
 //    create, the server's JSON for update/merge/cancel (custom actions return
 //    the parsed response), and an array of attributes for list. Nothing is

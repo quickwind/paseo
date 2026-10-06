@@ -95,10 +95,11 @@ describe("buildForgeSignInCommand", () => {
     expect(buildForgeSignInCommand("github", "ssh.github.com")).toBe("gh auth login");
   });
 
-  it("targets the workspace host for self-hosted GitLab", () => {
-    expect(buildForgeSignInCommand("gitlab", "gitlab.acme.com")).toBe(
-      "glab auth login --hostname gitlab.acme.com",
-    );
+  // Internal edition: python-gitlab has no login command and reads its host from
+  // ~/.python-gitlab.cfg, so the hint verifies the setup and ignores the workspace host.
+  it("shows the python-gitlab check for GitLab regardless of the workspace host", () => {
+    expect(buildForgeSignInCommand("gitlab", "gitlab.acme.com")).toBe("gitlab current-user get");
+    expect(buildForgeSignInCommand("gitlab", null)).toBe("gitlab current-user get");
   });
 
   it("returns no sign-in command for an unknown forge with no known CLI", () => {

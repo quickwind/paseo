@@ -1,6 +1,6 @@
 # Internal edition
 
-This fork runs only on company machines. It has no device pairing, Paseo itself sends nothing to cloud services, and the only providers are Claude Code and Devin CLI.
+This fork runs only on company machines. It has no device pairing, Paseo itself sends nothing to cloud services, the only providers are Claude Code and Devin CLI, and the only git forge is the company's self-hosted GitLab.
 
 ## Where the policy lives
 
@@ -14,6 +14,7 @@ This fork runs only on company machines. It has no device pairing, Paseo itself 
 | `cloudServicesEnabled`                  | `false`               | Blocks every Paseo-initiated cloud request listed below                                                                |
 | `customProvidersEnabled`                | `false`               | Hides "Add provider" in host settings                                                                                  |
 | `loopbackOnly`                          | `true`                | Daemon and service proxy refuse any listen address outside loopback or a local socket                                  |
+| `forgeRepositoryClone`                  | `true`                | Add Project and `paseo clone` use the GitLab forge RPCs instead of the GitHub ones                                     |
 
 ## What is blocked
 
@@ -33,7 +34,8 @@ This fork runs only on company machines. It has no device pairing, Paseo itself 
 ## What is not blocked
 
 - The agents themselves. Claude Code talks to Anthropic (or the endpoint you set in `ANTHROPIC_BASE_URL`) and Devin CLI talks to Cognition. Route them through your company gateway with each CLI's own settings or with `agents.providers.<id>.env`.
-- Git forge features. They run `git` and `gh` against whatever remote the repository uses.
+- `git` itself. It talks to whatever remote a repository has; only the forge features (pull request status, merge, search, clone shorthand) are limited to the configured GitLab.
+- The legacy `workspace.github.*` and `project.github.*` RPCs. They stay in the protocol and still work for a client that calls them. The app and CLI in this edition do not.
 - Links a person clicks, such as docs and issue links.
 - Direct connections and SSH remote hosts. They reach a daemon you name; a remote daemon is still bound to its own loopback.
 
@@ -46,6 +48,87 @@ Install Devin CLI so `devin acp` works on `PATH`. Paseo launches `devin acp` and
 ```
 
 An existing `devin` entry with `extends: "acp"` keeps working; its command and env now apply to the built-in provider.
+
+## Setting up GitLab
+
+Paseo reaches GitLab through the python-gitlab CLI (`gitlab`), because `glab` cannot be installed here. Paseo never stores a GitLab token and never puts one on a command line. python-gitlab owns the credentials.
+
+### On each machine that runs a daemon
+
+1. Install the CLI for the user that runs the daemon: `uv tool install python-gitlab`. The daemon looks for `gitlab` on the `PATH` it starts with, which for a desktop launcher is shorter than your shell's. Put `~/.local/bin` on it, or set `forge.gitlab.command` to an absolute path such as `["/home/dev/.local/bin/gitlab"]`.
+2. Create a personal access token with the `api` scope. Merge, squash, create, and cancel auto-merge need write access.
+3. Write `~/.python-gitlab.cfg`:
+
+   ```ini
+   [global]
+   default = corp
+
+   [corp]
+   url = https://gitlab.corp.example
+   private_token = helper: pass show gitlab/corp-token
+   ssl_verify = /etc/ssl/certs/corp-ca.pem
+   ```
+
+   - `url` is required in the section even though Paseo passes its own URL.
+   - Keep the token out of the file with `helper:`, which runs the command with no terminal. A plain `private_token = glpat-...` also works. `GITLAB_PRIVATE_TOKEN` in the daemon's environment works too.
+   - `ssl_verify` takes `true`, `false`, or a CA bundle path. Use the path for a private CA.
+   - With a config file present and no `forge.gitlab.configSection`, python-gitlab reads `[global] default`. If that section points at another server, its token is sent to the company GitLab. Set `configSection` to avoid that.
+
+4. Check it: `gitlab current-user get` prints your user as JSON.
+5. Tell the daemon where GitLab is, in `$PASEO_HOME/config.json`:
+
+   ```json
+   {
+     "forge": {
+       "gitlab": {
+         "url": "https://gitlab.corp.example",
+         "sshHost": "gitlab.corp.example:2222",
+         "configSection": "corp"
+       }
+     }
+   }
+   ```
+
+   | Field           | Required | Meaning                                                                                                |
+   | --------------- | -------- | ------------------------------------------------------------------------------------------------------ |
+   | `url`           | yes      | `https` URL of GitLab. A sub-path such as `https://host/gitlab` works.                                 |
+   | `sshHost`       | no       | `host` or `host:port` for SSH remotes and clone URLs. Defaults to the host of `url`.                   |
+   | `configSection` | no       | python-gitlab section to read the token from (`--gitlab`).                                             |
+   | `command`       | no       | Command that starts python-gitlab, `["gitlab"]` by default. Extra entries go before the Paseo options. |
+
+   An invalid value stops the daemon at load with the field named. Without `forge.gitlab`, no forge resolves.
+
+Only the hosts in `url` and `sshHost` are forge hosts. GitHub, gitlab.com, Gitea, Forgejo, Codeberg, and every other host resolve to no forge, and Paseo makes no request to them. An SSH alias in `~/.ssh/config` resolves through `ssh -G`.
+
+### Behavior to know
+
+- Merge and squash only. Squash sets the merge request's squash flag, then merges. If the merge fails, the flag stays set. Rebase is rejected by the daemon and hidden in the app.
+- No background polling. The refresh button in the pull request pane reads status again. One status read runs about five CLI invocations at roughly 0.4 s startup each.
+- Add Project searches `project list --membership` and clones `group/sub/project` shorthand to `https://<url>/<path>.git`, or to SSH when `sshHost` is set (`ssh://git@host:port/<path>.git` with a port). Full URLs are cloned only when their host is the configured one.
+- python-gitlab reads an option value that starts with `@` from that file. Paseo doubles a leading `@`, so a title or branch name never reads a local file.
+- The pipeline for a merge request is its newest one, read from the project the pipeline reports, so fork and detached pipelines show their jobs.
+
+### Acceptance checklist for GitLab 19.0
+
+The adapter was built and tested against recorded REST shapes and a local fake server, not a 19.0 instance. Run these on the company network before relying on it.
+
+1. `gitlab --version` and `gitlab current-user get` work as the daemon's user, from the environment the daemon starts in (desktop launcher, not only a shell).
+2. A checkout whose `origin` is on the configured host shows its merge request in the pull request pane: title, state, checks, approvals.
+3. `gitlab -o json project-merge-request get --project-id <group/project> --iid <n>` includes `detailed_merge_status`, `head_pipeline`, `references.full`, `blocking_discussions_resolved`, `has_conflicts`, `draft`, and `squash`. The adapter reads `detailed_merge_status` first and falls back to `merge_status` only when it is absent.
+4. The same response carries `auto_merge_enabled` or `merge_when_pipeline_succeeds`. The adapter prefers the first.
+5. Enable auto-merge on a merge request with a running pipeline. python-gitlab's `merge` offers only `--merge-when-pipeline-succeeds`, the parameter GitLab is deprecating in favor of `auto_merge`. Confirm GitLab 19.0 still accepts it and the merge request shows auto-merge afterward. If it does not, upgrade python-gitlab or tell the maintainers; the CLI has no way to send `auto_merge`.
+6. Cancel auto-merge from the app; the merge request leaves the auto-merge state.
+7. Squash merge a mergeable request: the squash flag is set, then the merge lands as one commit. Boolean options reach GitLab as the strings `"true"` and `"false"`; confirm 19.0 accepts them.
+8. Direct merge (merge commit) works, and the app refuses it while GitLab reports the request as not mergeable.
+9. A merge request from a fork shows its pipeline jobs. The jobs are read from the project the pipeline reports.
+10. The timeline lists discussions, resolved state, and diff positions.
+11. The approvals endpoint answers or fails quietly; approval counts fall back to zero.
+12. Search finds issues and merge requests. Issue links open at `/-/work_items/<n>` or `/-/issues/<n>`.
+13. Add Project lists your projects, filters by search text, and clones by shorthand over SSH (with and without a port in `sshHost`) and by HTTPS. A GitHub URL is refused.
+14. A private CA works through `ssl_verify` in the section, with no change to Paseo.
+15. A token supplied by `helper:` works with the daemon, which has no terminal.
+16. Create a merge request from Paseo with a title that starts with `@` and a description that is empty or starts with `-`. The text arrives literally.
+17. With the CLI missing, the pull request pane says to run `uv tool install python-gitlab`. With a bad token, it reports an authentication failure.
 
 ## Provisioning speech models
 
