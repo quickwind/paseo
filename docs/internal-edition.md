@@ -140,6 +140,46 @@ The adapter was built and tested against recorded REST shapes and a local fake s
 16. Create a merge request from Paseo with a title that starts with `@` and a description that is empty or starts with `-`. The text arrives literally.
 17. With the CLI missing, the pull request pane says to run `uv tool install python-gitlab`. With a bad token, it reports an authentication failure.
 
+## Publishing to npm
+
+`.github/workflows/publish-wukong.yml` publishes every push to `internal-edition`. It verifies first (typecheck, lint, format, and the edition tests), then packs the seven packages, installs them together as a smoke test, and publishes them in dependency order. It does nothing until you set `NPM_SCOPE`.
+
+The packages are named `@getpaseo/*` in source, and you cannot publish under that scope. The workflow rewrites the scope to yours in its own checkout with `scripts/rename-npm-scope.mjs` before it installs, so the committed source stays identical to upstream and merges stay small. Never commit the rewritten tree.
+
+Each build publishes `<upstream version without prerelease>-wukong.<run number>`, for example `0.11.0-wukong.58`, on the `latest` tag. A re-run of a half-finished release skips packages that already exist at that version. The run number does not reset on a re-run, but it does restart at 1 if you delete and recreate the workflow; set the version suffix by hand then, because a registry refuses to overwrite a published version.
+
+### What you need
+
+| Setting        | Where                                   | Value                                                                                                                           |
+| -------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `NPM_SCOPE`    | Repository variable                     | Your scope without the `@`. Required. Published names become `@<scope>/cli`, `@<scope>/server`, and so on.                      |
+| `NPM_REGISTRY` | Repository variable                     | Defaults to `https://registry.npmjs.org`. For GitHub Packages use `https://npm.pkg.github.com`.                                 |
+| `NPM_ACCESS`   | Repository variable                     | `restricted` (default) or `public`. npm needs a paid organization for `restricted` scoped packages. GitHub Packages ignores it. |
+| `NPM_TOKEN`    | Secret in the `npm-publish` environment | A token that may publish to the scope. Not needed for GitHub Packages, which accepts the workflow's own token.                  |
+
+Create the `npm-publish` environment under Settings → Environments. Put `NPM_TOKEN` there, and add required reviewers if a person should approve each release.
+
+Pick one registry:
+
+- **GitHub Packages.** No extra account and no secret. The scope must equal the repository owner, lowercase. A person installing needs a token with `read:packages`, even for a public package.
+- **npmjs.com.** Needs an npm organization that owns the scope and a granular access token with publish permission. Public packages publish the company edition to everyone.
+- **An internal registry** such as Nexus or Artifactory. GitHub-hosted runners reach only the internet, so you need a self-hosted runner that can reach the registry: change `runs-on` in the `publish` job, and set `NPM_REGISTRY` and `NPM_TOKEN`.
+
+### Before the first release
+
+1. Set the variables and the secret above.
+2. Disable the upstream workflows you do not use under Actions. Several trigger on `v*` tags or on `main`, and need Cloudflare, Apple, Expo, or Docker credentials this fork does not have. The Wukong workflow never creates a `v*` tag; do not tag this branch with one.
+3. Run the workflow by hand with `dry_run` on. It builds, smoke-tests the tarballs, and runs `npm publish --dry-run` without publishing.
+
+### Installing from the registry
+
+Point the scope at the registry, then install the CLI. Its dependencies come from the same scope.
+
+```bash
+npm config set @<scope>:registry https://npm.pkg.github.com   # or your registry
+npm install -g @<scope>/cli
+```
+
 ## Provisioning speech models
 
 Dictation and voice use local models only, and the daemon does not download them. Copy the model directories into `$PASEO_HOME/models/local-speech` (or the directory in `PASEO_LOCAL_MODELS_DIR`) before turning those features on.

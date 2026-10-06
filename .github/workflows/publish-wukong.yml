@@ -1,0 +1,184 @@
+name: Publish Wukong to npm
+
+# Internal edition: every push to internal-edition builds the seven packages under the
+# company's npm scope and publishes a new `-wukong.N` version. It does nothing until the
+# repository variable NPM_SCOPE is set. Setup: docs/internal-edition.md ("Publishing to npm").
+#
+# This workflow never creates a `v*` tag. The upstream desktop, Android, app, and Docker
+# release workflows trigger on `v*` tags, so tag this branch with another prefix.
+
+on:
+  push:
+    branches: [internal-edition]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Pack and run `npm publish --dry-run` without publishing"
+        type: boolean
+        default: false
+
+concurrency:
+  group: publish-wukong
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  # Not needed to build, and the onnxruntime-node postinstall download is large and flaky.
+  ONNXRUNTIME_NODE_INSTALL: skip
+  PUBLISH_NODE_VERSION: "22"
+
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.PUBLISH_NODE_VERSION }}
+          cache: npm
+
+      # --ignore-scripts skips native builds and downloads nothing the build needs;
+      # the root postinstall applies the patches in patches/ that the web UI requires.
+      - name: Install dependencies
+        run: |
+          node scripts/npm-retry.mjs ci --ignore-scripts --no-audit --no-fund
+          npm run postinstall
+
+      - name: Build server stack
+        run: npm run build:server
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Check formatting
+        run: npm run format:check
+
+      # Edition behavior only: provider and forge allowlists, relay/cloud lockdown, GitLab
+      # through python-gitlab, the disabled GitHub paths, and the CLI surface. Upstream runs
+      # the full suites in ci.yml.
+      - name: Edition tests (server)
+        working-directory: packages/server
+        run: >
+          npx vitest run --bail=1
+          src/server/agent/provider-registry.test.ts
+          src/server/agent/provider-snapshot-manager.test.ts
+          src/server/config.test.ts
+          src/server/config-relay.test.ts
+          src/server/speech/speech-config-resolver.test.ts
+          src/server/plugins/managed-source.posix.test.ts
+          src/server/websocket-server.github-edition.test.ts
+          src/services/github-service-disabled.test.ts
+          src/services/gitlab-forge-config.test.ts
+          src/services/gitlab-service.test.ts
+          src/services/forge-registry.test.ts
+          src/services/forge-resolver.test.ts
+
+      - name: Edition tests (cli, app, desktop)
+        run: |
+          (cd packages/cli && npx vitest run --bail=1 src/cli-surface.test.ts src/commands/clone.test.ts)
+          (cd packages/app && npx vitest run --bail=1 src/i18n/resources.test.ts src/git/policy.test.ts src/git/forge.test.ts)
+          (cd packages/desktop && npx vitest run --bail=1 src/features/auto-updater.test.ts)
+
+  publish:
+    name: publish
+    needs: verify
+    # Inert until NPM_SCOPE is configured; see docs/internal-edition.md.
+    if: ${{ vars.NPM_SCOPE != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # Create this environment to hold NPM_TOKEN and, if you want, require a reviewer.
+    environment: npm-publish
+    permissions:
+      contents: read
+      packages: write
+    env:
+      NPM_SCOPE: ${{ vars.NPM_SCOPE }}
+      NPM_REGISTRY: ${{ vars.NPM_REGISTRY || 'https://registry.npmjs.org' }}
+      NPM_ACCESS: ${{ vars.NPM_ACCESS || 'restricted' }}
+      DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+      # GitHub Packages accepts the workflow token. Any other registry needs NPM_TOKEN.
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN || secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.PUBLISH_NODE_VERSION }}
+          cache: npm
+          registry-url: ${{ env.NPM_REGISTRY }}
+          scope: "@${{ env.NPM_SCOPE }}"
+
+      # The source keeps @getpaseo so upstream merges stay small. Rewrite the scope in this
+      # throwaway checkout only, before installing, so the lockfile and workspaces agree.
+      - name: Rename the npm scope
+        run: node scripts/rename-npm-scope.mjs --scope "$NPM_SCOPE"
+
+      - name: Install dependencies
+        run: |
+          node scripts/npm-retry.mjs ci --ignore-scripts --no-audit --no-fund
+          npm run postinstall
+
+      # Upstream version with its prerelease stripped, plus the run number: 0.11.0-wukong.58.
+      # Prereleases sort below the bare version, which this workflow never publishes, and
+      # the run number keeps successive builds in order.
+      - name: Set the version
+        id: version
+        run: |
+          core="$(node -p "require('./package.json').version.split('-')[0]")"
+          version="${core}-wukong.${GITHUB_RUN_NUMBER}"
+          npm pkg set version="$version"
+          node scripts/sync-workspace-versions.mjs
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Publishing version $version under @$NPM_SCOPE"
+
+      # Packing builds each package; the server's prepack builds the web UI.
+      - name: Pack
+        run: |
+          mkdir -p dist-npm
+          for p in highlight relay protocol client plugin server cli; do
+            npm pack --workspace="@${NPM_SCOPE}/${p}" --pack-destination dist-npm
+          done
+          ls -l dist-npm
+
+      # Install the tarballs together, exactly as users do, and check the result is the
+      # restricted edition at the version we are about to publish.
+      - name: Smoke test the tarballs
+        env:
+          EXPECTED_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          npm install -g --prefix "$RUNNER_TEMP/smoke" ./dist-npm/*.tgz
+          bin="$RUNNER_TEMP/smoke/bin/wukong"
+          "$bin" --version | grep -F "$EXPECTED_VERSION"
+          "$bin" --help | head -1 | grep -F "wukong"
+          test -f "$RUNNER_TEMP/smoke/lib/node_modules/@${NPM_SCOPE}/protocol/dist/internal-edition.js"
+          test -f "$RUNNER_TEMP/smoke/lib/node_modules/@${NPM_SCOPE}/server/dist/server/web-ui/index.html"
+          # Nothing may still point at the upstream scope.
+          if grep -rl "@getpaseo/" "$RUNNER_TEMP/smoke/lib/node_modules/@${NPM_SCOPE}"; then
+            echo "A tarball still references the upstream @getpaseo scope" >&2
+            exit 1
+          fi
+
+      - name: Publish
+        run: >
+          node scripts/publish-internal-edition.mjs
+          --dir dist-npm
+          --scope "$NPM_SCOPE"
+          --registry "$NPM_REGISTRY"
+          --access "$NPM_ACCESS"
+          --tag latest
+          $([ "$DRY_RUN" = "true" ] && echo --dry-run)
+
+      - name: Keep the tarballs
+        uses: actions/upload-artifact@v4
+        with:
+          name: wukong-npm-${{ steps.version.outputs.version }}
+          path: dist-npm/*.tgz
+          retention-days: 30
