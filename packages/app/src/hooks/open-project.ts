@@ -77,6 +77,13 @@ export interface CloneGithubProjectDirectlyInput extends ProjectRegistrationCall
   client: Pick<DaemonClient, "cloneGithubProject"> | null;
 }
 
+export interface CloneForgeProjectDirectlyInput extends ProjectRegistrationCallbacks {
+  repo: string;
+  targetDirectory: string;
+  cloneProtocol?: ProjectGithubCloneProtocol;
+  client: Pick<DaemonClient, "cloneForgeProject"> | null;
+}
+
 export async function openProjectDirectly(
   input: OpenProjectDirectlyInput,
 ): Promise<OpenProjectResult> {
@@ -117,6 +124,35 @@ export async function openProjectDirectly(
 export async function cloneGithubProjectDirectly(
   input: CloneGithubProjectDirectlyInput,
 ): Promise<OpenProjectResult> {
+  return cloneProjectDirectly(input, (request) => input.client?.cloneGithubProject(request));
+}
+
+/** Internal edition: clone `group/project` or a remote URL from the host's forge. */
+export async function cloneForgeProjectDirectly(
+  input: CloneForgeProjectDirectlyInput,
+): Promise<OpenProjectResult> {
+  return cloneProjectDirectly(input, (request) => input.client?.cloneForgeProject(request));
+}
+
+interface CloneRequest {
+  repo: string;
+  targetDirectory: string;
+  cloneProtocol?: ProjectGithubCloneProtocol;
+}
+
+async function cloneProjectDirectly(
+  input: ProjectRegistrationCallbacks & {
+    repo: string;
+    targetDirectory: string;
+    cloneProtocol?: ProjectGithubCloneProtocol;
+    client: object | null;
+  },
+  clone: (
+    request: CloneRequest,
+  ) =>
+    | Promise<{ project: WorkspaceProjectDescriptorPayload | null; error: string | null }>
+    | undefined,
+): Promise<OpenProjectResult> {
   const normalizedServerId = input.serverId.trim();
   const trimmedRepo = input.repo.trim();
   const trimmedTargetDirectory = input.targetDirectory.trim();
@@ -130,13 +166,13 @@ export async function cloneGithubProjectDirectly(
     return { ok: false, errorCode: null, error: null };
   }
 
-  const payload = await input.client.cloneGithubProject({
+  const payload = await clone({
     repo: trimmedRepo,
     targetDirectory: trimmedTargetDirectory,
     ...(input.cloneProtocol ? { cloneProtocol: input.cloneProtocol } : {}),
   });
-  if (payload.error || !payload.project) {
-    return { ok: false, errorCode: null, error: payload.error };
+  if (!payload || payload.error || !payload.project) {
+    return { ok: false, errorCode: null, error: payload?.error ?? null };
   }
 
   const registered = registerProjectDescriptor({

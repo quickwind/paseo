@@ -36,6 +36,7 @@ import type {
   PullRequestMergeable,
 } from "../services/forge-service.js";
 import { createForgeService, type ForgeRegistry } from "../services/forge-registry.js";
+import type { ForgeRepositoryCatalog } from "../services/forge-repository-catalog.js";
 import {
   createForgeResolver,
   type ForgeResolution,
@@ -216,6 +217,11 @@ export interface WorkspaceGitService {
     options?: WorkspaceGitSnapshotOptions,
   ): Promise<WorkspaceGitRuntimeSnapshot>;
   resolveForge(cwd: string): Promise<ForgeResolution | null>;
+  /**
+   * Internal edition: the host-level repository catalog behind Add Project, or
+   * null when no forge is configured. Optional so test doubles need not carry it.
+   */
+  getForgeRepositoryCatalog?(): ForgeRepositoryCatalog | null;
   getCheckoutDiff(
     cwd: string,
     options: CheckoutDiffCompare,
@@ -399,6 +405,8 @@ interface WorkspaceGitServiceOptions {
   fileObserver?: FileObserver;
   /** Internal edition: gated forge registry. Unset uses every built-in adapter. */
   forgeRegistry?: ForgeRegistry;
+  /** Internal edition: repository catalog for Add Project. Unset means none. */
+  forgeRepositories?: ForgeRepositoryCatalog | null;
   deps?: Partial<WorkspaceGitServiceDependencies>;
 }
 
@@ -592,6 +600,7 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
   private readonly fileObserver: FileObserver;
   private readonly deps: WorkspaceGitServiceDependencies;
   private readonly forgeResolver: ForgeResolver;
+  private readonly forgeRepositories: ForgeRepositoryCatalog | null;
   private readonly workspaceRefreshLimit = pLimit({
     concurrency: WORKSPACE_GIT_REFRESH_CONCURRENCY,
     rejectOnClear: true,
@@ -646,6 +655,7 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
       options.deps,
     );
     const forgeRegistry = options.forgeRegistry;
+    this.forgeRepositories = options.forgeRepositories ?? null;
     this.forgeResolver = createForgeResolver({
       registry: forgeRegistry,
       createService: (forge) =>
@@ -657,6 +667,10 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
   resolveForge(cwd: string): Promise<ForgeResolution | null> {
     this.assertNotDisposed();
     return this.forgeResolver.resolve(resolve(cwd));
+  }
+
+  getForgeRepositoryCatalog(): ForgeRepositoryCatalog | null {
+    return this.forgeRepositories;
   }
 
   registerWorkspace(

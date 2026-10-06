@@ -20,6 +20,8 @@ export const INTERNAL_EDITION = {
   customProvidersEnabled: false,
   /** The daemon refuses to listen on anything but loopback or a Unix socket. */
   loopbackOnly: true,
+  /** Add Project clones from the internal GitLab through the forge RPCs, not from GitHub. */
+  forgeRepositoryClone: true,
 } as const;
 
 export function isProviderAllowedByEdition(providerId: string): boolean {

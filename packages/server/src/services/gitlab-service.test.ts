@@ -9,6 +9,7 @@ import {
   GitLabCliMissingError,
   GitLabCommandError,
 } from "./gitlab-python-client.js";
+import { createGitLabRepositoryCatalog } from "./forge-repository-catalog.js";
 import { type CreateGitLabServiceOptions, createGitLabService } from "./gitlab-service.js";
 
 // The fake CLI is keyed by argv. Every call starts with the global python-gitlab
@@ -1785,6 +1786,98 @@ describe("createGitLabService", () => {
 
     await expect(service.searchIssuesAndPrs({ cwd: "/repo", query: "release" })).rejects.toThrow(
       GitLabCommandError,
+    );
+  });
+});
+
+describe("GitLab repository catalog", () => {
+  const SIMPLE_PROJECT = {
+    id: 42,
+    description: "Billing core",
+    name: "billing",
+    path_with_namespace: "payments/core/billing",
+    default_branch: "main",
+    last_activity_at: "2026-10-01T12:00:00.000Z",
+    ssh_url_to_repo: "git@internal-gitlab:payments/core/billing.git",
+  };
+
+  it("lists the user's projects with project list --membership --simple", async () => {
+    const { service, calls } = makeService(
+      byCommand({ "project list": () => json([SIMPLE_PROJECT]) }),
+    );
+
+    const repositories = await service.searchRepositories?.({
+      cwd: "/home/dev",
+      query: " billing ",
+      limit: 7,
+    });
+
+    expect(calls).toEqual([
+      [
+        "project",
+        "list",
+        "--membership=true",
+        "--simple=true",
+        "--order-by=last_activity_at",
+        "--sort=desc",
+        "--per-page=7",
+        "--no-get-all",
+        "--search=billing",
+      ],
+    ]);
+    // The clone URL comes from the configured host, not the server-reported one.
+    expect(repositories).toEqual([
+      {
+        id: "42",
+        name: "billing",
+        nameWithOwner: "payments/core/billing",
+        description: "Billing core",
+        updatedAt: "2026-10-01T12:00:00.000Z",
+        cloneUrl: "https://gitlab.example.com/payments/core/billing.git",
+      },
+    ]);
+  });
+
+  it("lists recent projects for an empty query and builds ssh clone URLs when configured", async () => {
+    const { service, calls } = makeService(
+      byCommand({ "project list": () => json([SIMPLE_PROJECT]) }),
+      { config: { url: "https://gitlab.example.com", sshHost: "ssh.example.com:2222" } },
+    );
+
+    const repositories = await service.searchRepositories?.({ cwd: "/home/dev", query: "" });
+
+    expect(calls[0]).not.toContainEqual(expect.stringMatching(/^--search/));
+    expect(calls[0]).toContain("--per-page=20");
+    expect(repositories?.[0]?.cloneUrl).toBe(
+      "ssh://git@ssh.example.com:2222/payments/core/billing.git",
+    );
+  });
+
+  it("needs no checkout: the search never resolves a remote", async () => {
+    const { service } = makeService(byCommand({ "project list": () => json([]) }), {
+      resolveRemoteUrl: async () => {
+        throw new Error("must not resolve a remote");
+      },
+    });
+
+    await expect(service.searchRepositories?.({ cwd: "/home/dev", query: "x" })).resolves.toEqual(
+      [],
+    );
+  });
+
+  it("builds the catalog from the configured GitLab", async () => {
+    const { service } = makeService(byCommand({ "project list": () => json([SIMPLE_PROJECT]) }));
+    const catalog = createGitLabRepositoryCatalog({ config: CONFIG, service });
+
+    expect(catalog.forge).toBe("gitlab");
+    await expect(catalog.searchRepositories({ query: "bill" })).resolves.toHaveLength(1);
+    expect(catalog.resolveCloneTarget({ repo: "payments/core/billing" })).toEqual({
+      name: "billing",
+      displayName: "payments/core/billing",
+      cloneUrl: "https://gitlab.example.com/payments/core/billing.git",
+    });
+    expect(() => catalog.resolveCloneTarget({ repo: "git@github.com:a/b.git" })).toThrow(
+      /Only repositories on gitlab\.example\.com/,
     );
   });
 });

@@ -516,6 +516,76 @@ describe("workspace message schemas", () => {
     expect(response.success).toBe(false);
   });
 
+  test("parses forge repository search and clone messages", () => {
+    const search = SessionInboundMessageSchema.parse({
+      type: "workspace.forge.search_repositories.request",
+      query: "billing",
+      limit: 20,
+      requestId: "req-search",
+    });
+    const found = SessionOutboundMessageSchema.parse({
+      type: "workspace.forge.search_repositories.response",
+      payload: {
+        status: "success",
+        requestId: "req-search",
+        forge: "gitlab",
+        repositories: [
+          {
+            id: "42",
+            name: "billing",
+            nameWithOwner: "payments/core/billing",
+            description: null,
+            updatedAt: "2026-10-01T00:00:00Z",
+            cloneUrl: "git@git.corp.example:payments/core/billing.git",
+          },
+        ],
+        available: true,
+        error: null,
+      },
+    });
+    const unavailable = SessionOutboundMessageSchema.parse({
+      type: "workspace.forge.search_repositories.response",
+      payload: {
+        status: "unavailable",
+        requestId: "req-search",
+        repositories: [],
+        reason: "not_configured",
+        available: false,
+        error: "No GitLab is configured on this host",
+      },
+    });
+    const clone = SessionInboundMessageSchema.parse({
+      type: "project.forge.clone.request",
+      repo: "payments/core/billing",
+      targetDirectory: "~/workspace",
+      requestId: "req-clone",
+    });
+    const cloned = SessionOutboundMessageSchema.parse({
+      type: "project.forge.clone.response",
+      payload: {
+        requestId: "req-clone",
+        repo: "payments/core/billing",
+        checkoutPath: "/tmp/billing",
+        project: null,
+        error: "failed",
+      },
+    });
+
+    expect(search.type).toBe("workspace.forge.search_repositories.request");
+    expect(found.type).toBe("workspace.forge.search_repositories.response");
+    expect(unavailable.type).toBe("workspace.forge.search_repositories.response");
+    expect(clone.type).toBe("project.forge.clone.request");
+    expect(cloned.type).toBe("project.forge.clone.response");
+  });
+
+  test("rejects a forge clone repo shorter than a path and unknown clone protocols", () => {
+    const base = { type: "project.forge.clone.request", targetDirectory: "~/w", requestId: "r" };
+    expect(SessionInboundMessageSchema.safeParse({ ...base, repo: "ab" }).success).toBe(false);
+    expect(
+      SessionInboundMessageSchema.safeParse({ ...base, repo: "a/b", cloneProtocol: "ftp" }).success,
+    ).toBe(false);
+  });
+
   test("parses legacy editor RPC messages for compatibility", () => {
     const listRequest = SessionInboundMessageSchema.parse({
       type: "list_available_editors_request",

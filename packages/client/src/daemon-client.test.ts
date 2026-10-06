@@ -3508,6 +3508,77 @@ test("searches GitHub repositories through the dotted RPC", async () => {
   });
 });
 
+test("searches and clones forge repositories through the dotted RPCs", async () => {
+  const logger = createMockLogger();
+  const mock = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "clsk_unit_test",
+    logger,
+    reconnect: { enabled: false },
+    transportFactory: () => mock.transport,
+  });
+  clients.push(client);
+
+  const connectPromise = client.connect();
+  mock.triggerOpen();
+  await connectPromise;
+
+  const searchPromise = client.searchForgeRepositories(
+    { query: "billing", limit: 5 },
+    "req-forge-search",
+  );
+  expect(parseSentFrame(mock.sent[0])).toEqual({
+    type: "workspace.forge.search_repositories.request",
+    query: "billing",
+    limit: 5,
+    requestId: "req-forge-search",
+  });
+  const found = {
+    status: "success",
+    requestId: "req-forge-search",
+    forge: "gitlab",
+    repositories: [
+      {
+        id: "42",
+        name: "billing",
+        nameWithOwner: "payments/core/billing",
+        description: null,
+        updatedAt: "2026-10-01T00:00:00Z",
+        cloneUrl: "git@git.corp.example:payments/core/billing.git",
+      },
+    ],
+    available: true,
+    error: null,
+  };
+  mock.triggerMessage(
+    wrapSessionMessage({ type: "workspace.forge.search_repositories.response", payload: found }),
+  );
+  await expect(searchPromise).resolves.toEqual(found);
+
+  const clonePromise = client.cloneForgeProject(
+    { repo: "payments/core/billing", targetDirectory: "~/dev" },
+    "req-forge-clone",
+  );
+  expect(parseSentFrame(mock.sent[1])).toEqual({
+    type: "project.forge.clone.request",
+    repo: "payments/core/billing",
+    targetDirectory: "~/dev",
+    requestId: "req-forge-clone",
+  });
+  const cloned = {
+    requestId: "req-forge-clone",
+    repo: "payments/core/billing",
+    checkoutPath: "/home/dev/billing",
+    project: null,
+    error: "Checkout path already exists: /home/dev/billing",
+  };
+  mock.triggerMessage(
+    wrapSessionMessage({ type: "project.forge.clone.response", payload: cloned }),
+  );
+  await expect(clonePromise).resolves.toEqual(cloned);
+});
+
 test("creates and registers a project directory through the dotted RPC", async () => {
   const logger = createMockLogger();
   const mock = createMockTransport();

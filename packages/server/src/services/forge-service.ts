@@ -433,7 +433,30 @@ export interface CreatePullRequestOptions {
   body?: string;
 }
 
+export interface ForgeRepositorySummary {
+  id: string;
+  name: string;
+  /** Full path with namespaces, e.g. `group/subgroup/project`. */
+  nameWithOwner: string;
+  description: string | null;
+  visibility?: "public" | "private" | "internal";
+  updatedAt: string;
+  cloneUrl: string;
+}
+
+export interface SearchForgeRepositoriesOptions {
+  cwd: string;
+  query: string;
+  limit?: number;
+}
+
 export interface ForgeService {
+  /**
+   * Repositories the signed-in user can clone, for Add Project. Optional: only
+   * adapters with a host-level catalog implement it. An empty query lists the
+   * most recently active ones.
+   */
+  searchRepositories?(options: SearchForgeRepositoriesOptions): Promise<ForgeRepositorySummary[]>;
   listPullRequests(options: ListPullRequestsOptions): Promise<PullRequestSummary[]>;
   listIssues(options: ListIssuesOptions): Promise<IssueSummary[]>;
   getPullRequest(options: GetPullRequestOptions): Promise<PullRequestSummary>;

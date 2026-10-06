@@ -2606,6 +2606,36 @@ export const ProjectGithubCloneRequestSchema = z.object({
   requestId: z.string(),
 });
 
+// Forge-neutral repository catalog. The daemon decides which forge answers; the
+// internal edition has exactly one (the configured GitLab).
+export const ForgeRepositorySchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  // Full path with namespaces, e.g. `group/subgroup/project`.
+  nameWithOwner: z.string().min(MIN_REPOSITORY_PATH_LENGTH),
+  description: z.string().nullable(),
+  visibility: z.enum(["public", "private", "internal"]).optional(),
+  updatedAt: z.string(),
+  cloneUrl: z.string().min(MIN_REPOSITORY_PATH_LENGTH),
+});
+
+export const WorkspaceForgeSearchRepositoriesRequestSchema = z.object({
+  type: z.literal("workspace.forge.search_repositories.request"),
+  query: z.string(),
+  limit: z.number().int().min(1).max(50).optional(),
+  requestId: z.string(),
+});
+
+export const ProjectForgeCloneRequestSchema = z.object({
+  type: z.literal("project.forge.clone.request"),
+  // `group/sub/project` shorthand, or a full remote URL on the configured forge host.
+  repo: z.string().trim().min(MIN_REPOSITORY_PATH_LENGTH),
+  // Absent: the daemon picks SSH when the forge config names an SSH host, else HTTPS.
+  cloneProtocol: ProjectGithubCloneProtocolSchema.optional(),
+  targetDirectory: z.string().trim().min(1),
+  requestId: z.string(),
+});
+
 export const ArchiveWorkspaceRequestSchema = z.object({
   type: z.literal("archive_workspace_request"),
   workspaceId: z.string(),
@@ -3318,6 +3348,8 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   ProjectCreateDirectoryRequestSchema,
   WorkspaceGithubSearchRepositoriesRequestSchema,
   ProjectGithubCloneRequestSchema,
+  WorkspaceForgeSearchRepositoriesRequestSchema,
+  ProjectForgeCloneRequestSchema,
   ArchiveWorkspaceRequestSchema,
   WorkspaceCreateRequestSchema,
   AgentCreateRequestSchema,
@@ -3670,6 +3702,10 @@ export const ServerInfoStatusPayloadSchema = z
         projectGithubClone: z.boolean().optional(),
         // COMPAT(workspaceGithubRepositorySearch): added in v0.1.108, remove gate after 2027-01-15.
         workspaceGithubRepositorySearch: z.boolean().optional(),
+        // COMPAT(forgeRepositories): added in v0.11.0, remove gate after 2027-04-06.
+        // Advertised when the daemon has a repository catalog (workspace.forge.search_repositories
+        // and project.forge.clone); absent on daemons without a configured forge.
+        forgeRepositories: z.boolean().optional(),
         // COMPAT(projectCreateDirectory): added in v0.1.108, remove gate after 2027-01-15.
         projectCreateDirectory: z.boolean().optional(),
         // COMPAT(projectList): added in v0.2.4, drop the gate when floor >= v0.2.4.
@@ -4485,6 +4521,58 @@ export const WorkspaceGithubSearchRepositoriesResponseSchema = z.object({
 
 export const ProjectGithubCloneResponseSchema = z.object({
   type: z.literal("project.github.clone.response"),
+  payload: z.object({
+    requestId: z.string(),
+    repo: z.string().trim().min(MIN_REPOSITORY_PATH_LENGTH),
+    checkoutPath: z.string().nullable(),
+    project: WorkspaceProjectDescriptorPayloadSchema.nullable(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const WorkspaceForgeSearchRepositoriesResponseSchema = z.object({
+  type: z.literal("workspace.forge.search_repositories.response"),
+  payload: z.discriminatedUnion("status", [
+    z.object({
+      status: z.literal("success"),
+      requestId: z.string(),
+      forge: z.string().optional(),
+      repositories: z.array(ForgeRepositorySchema),
+      available: z.literal(true),
+      error: z.null(),
+    }),
+    z.object({
+      status: z.literal("unavailable"),
+      requestId: z.string(),
+      forge: z.string().optional(),
+      repositories: z.array(ForgeRepositorySchema),
+      // `cli_missing`: the forge CLI is not installed. `not_configured`: the
+      // daemon has no forge configured.
+      reason: z.enum(["cli_missing", "not_configured"]),
+      available: z.literal(false),
+      error: z.string(),
+    }),
+    z.object({
+      status: z.literal("unauthenticated"),
+      requestId: z.string(),
+      forge: z.string().optional(),
+      repositories: z.array(ForgeRepositorySchema),
+      available: z.literal(false),
+      error: z.string(),
+    }),
+    z.object({
+      status: z.literal("error"),
+      requestId: z.string(),
+      forge: z.string().optional(),
+      repositories: z.array(ForgeRepositorySchema),
+      available: z.literal(true),
+      error: z.string(),
+    }),
+  ]),
+});
+
+export const ProjectForgeCloneResponseSchema = z.object({
+  type: z.literal("project.forge.clone.response"),
   payload: z.object({
     requestId: z.string(),
     repo: z.string().trim().min(MIN_REPOSITORY_PATH_LENGTH),
@@ -6876,6 +6964,8 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   OpenProjectResponseMessageSchema,
   WorkspaceGithubSearchRepositoriesResponseSchema,
   ProjectGithubCloneResponseSchema,
+  WorkspaceForgeSearchRepositoriesResponseSchema,
+  ProjectForgeCloneResponseSchema,
   StartWorkspaceScriptResponseMessageSchema,
   WorkspaceScriptListResponseMessageSchema,
   WorkspaceScriptStartResponseMessageSchema,
@@ -7085,6 +7175,11 @@ export type WorkspaceGithubSearchRepositoriesResponse = z.infer<
 >;
 export type GithubRepository = z.infer<typeof GithubRepositorySchema>;
 export type ProjectGithubCloneResponse = z.infer<typeof ProjectGithubCloneResponseSchema>;
+export type WorkspaceForgeSearchRepositoriesResponse = z.infer<
+  typeof WorkspaceForgeSearchRepositoriesResponseSchema
+>;
+export type ForgeRepository = z.infer<typeof ForgeRepositorySchema>;
+export type ProjectForgeCloneResponse = z.infer<typeof ProjectForgeCloneResponseSchema>;
 export type StartWorkspaceScriptResponseMessage = z.infer<
   typeof StartWorkspaceScriptResponseMessageSchema
 >;
@@ -7407,6 +7502,10 @@ export type WorkspaceGithubSearchRepositoriesRequest = z.infer<
   typeof WorkspaceGithubSearchRepositoriesRequestSchema
 >;
 export type ProjectGithubCloneRequest = z.infer<typeof ProjectGithubCloneRequestSchema>;
+export type WorkspaceForgeSearchRepositoriesRequest = z.infer<
+  typeof WorkspaceForgeSearchRepositoriesRequestSchema
+>;
+export type ProjectForgeCloneRequest = z.infer<typeof ProjectForgeCloneRequestSchema>;
 export type ProjectGithubCloneProtocol = z.infer<typeof ProjectGithubCloneProtocolSchema>;
 export type ArchiveWorkspaceRequest = z.infer<typeof ArchiveWorkspaceRequestSchema>;
 export type WorkspaceClearAttentionRequest = z.infer<typeof WorkspaceClearAttentionRequestSchema>;

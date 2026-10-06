@@ -133,3 +133,88 @@ export function parseGitLabProjectPath(
   }
   return path.length > 0 ? path : null;
 }
+
+export type GitLabCloneProtocol = "https" | "ssh";
+
+export interface GitLabCloneTarget {
+  /** Directory name of the checkout, the last path segment. */
+  name: string;
+  /** Full project path, shown to the user. */
+  displayName: string;
+  cloneUrl: string;
+}
+
+const PATH_SEGMENT_PATTERN = /^[A-Za-z0-9_][A-Za-z0-9._-]*$/u;
+
+function isValidProjectPath(path: string): boolean {
+  const segments = path.split("/");
+  return (
+    segments.length >= 2 &&
+    segments.every((segment) => PATH_SEGMENT_PATTERN.test(segment) && segment !== "..")
+  );
+}
+
+/**
+ * Clone URL for a project path on the configured GitLab: `https://host/<path>.git`,
+ * `git@host:<path>.git`, or `ssh://git@host:<port>/<path>.git` when the SSH host
+ * names a port.
+ */
+export function buildGitLabCloneUrl(
+  config: GitLabForgeConfig,
+  projectPath: string,
+  protocol: GitLabCloneProtocol,
+): string {
+  if (protocol === "https") {
+    return `${config.url.replace(/\/+$/u, "")}/${projectPath}.git`;
+  }
+  const hosts = resolveGitLabForgeHosts(config);
+  return hosts.sshPort
+    ? `ssh://git@${hosts.sshHost}:${hosts.sshPort}/${projectPath}.git`
+    : `git@${hosts.sshHost}:${projectPath}.git`;
+}
+
+/**
+ * Resolves what the user typed in Add Project to a clone target. Accepts
+ * `group/sub/project` shorthand, or a full remote URL whose host is the
+ * configured GitLab host; every other host is refused.
+ */
+export function resolveGitLabCloneTarget(
+  config: GitLabForgeConfig,
+  input: { repo: string; cloneProtocol?: GitLabCloneProtocol },
+): GitLabCloneTarget {
+  const repo = input.repo.trim();
+  if (!repo) {
+    throw new Error("Repository is required");
+  }
+  const hosts = resolveGitLabForgeHosts(config);
+
+  const remote = parseGitRemoteLocation(repo);
+  if (remote) {
+    const projectPath = parseGitLabProjectPath(config, repo);
+    if (!projectPath) {
+      throw new Error(`Only repositories on ${hosts.webHost} can be cloned`);
+    }
+    if (remote.transport === "http") {
+      throw new Error("Cloning over plain http is not supported; use https or ssh");
+    }
+    if (!isValidProjectPath(projectPath)) {
+      throw new Error("Repository path contains invalid characters");
+    }
+    return {
+      name: projectPath.split("/").at(-1) ?? projectPath,
+      displayName: projectPath,
+      cloneUrl: repo,
+    };
+  }
+
+  const projectPath = repo.replace(/\.git$/u, "");
+  if (!isValidProjectPath(projectPath)) {
+    throw new Error("Repository must use group/project format or a git remote URL");
+  }
+  const protocol = input.cloneProtocol ?? (config.sshHost ? "ssh" : "https");
+  return {
+    name: projectPath.split("/").at(-1) ?? projectPath,
+    displayName: projectPath,
+    cloneUrl: buildGitLabCloneUrl(config, projectPath, protocol),
+  };
+}

@@ -7,7 +7,7 @@ import {
   type GitLabClient,
   type GitLabPythonClientOptions,
 } from "./gitlab-python-client.js";
-import type { GitLabForgeConfig } from "./gitlab-forge-config.js";
+import { buildGitLabCloneUrl, type GitLabForgeConfig } from "./gitlab-forge-config.js";
 import type {
   GitLabApprovals,
   GitLabDiscussion,
@@ -31,6 +31,7 @@ import type {
   DisablePullRequestAutoMergeOptions,
   EnablePullRequestAutoMergeOptions,
   ForgeReadOptions,
+  ForgeRepositorySummary,
   ForgeService,
   GetCheckDetailsOptions,
   GetPullRequestOptions,
@@ -801,6 +802,24 @@ export function createGitLabService(options: CreateGitLabServiceOptions): ForgeS
   }
 
   return {
+    async searchRepositories(input): Promise<ForgeRepositorySummary[]> {
+      const projects = await client.searchProjects({
+        cwd: input.cwd,
+        query: input.query.trim() || undefined,
+        limit: input.limit,
+      });
+      // `project list --simple` omits visibility, so none is reported.
+      const protocol = options.config.sshHost ? "ssh" : "https";
+      return projects.map((project) => ({
+        id: String(project.id),
+        name: project.name ?? project.path_with_namespace.split("/").at(-1) ?? "",
+        nameWithOwner: project.path_with_namespace,
+        description: project.description ?? null,
+        updatedAt: project.last_activity_at ?? "",
+        cloneUrl: buildGitLabCloneUrl(options.config, project.path_with_namespace, protocol),
+      }));
+    },
+
     async isAuthenticated(input: { cwd: string } & ForgeReadOptions): Promise<boolean> {
       try {
         await client.currentUser(input.cwd);

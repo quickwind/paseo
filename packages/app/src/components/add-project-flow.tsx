@@ -33,7 +33,9 @@ import {
   type EditingTextInputHandle,
 } from "@/components/ui/text-input";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
+import { getCloneSourceCopy } from "@/add-project-flow/clone-source";
 import { GitHubIcon } from "@/components/icons/github-icon";
+import { GitLabIcon } from "@/components/icons/gitlab-icon";
 import {
   applyAvailableAddProjectHosts,
   backAddProjectPage,
@@ -59,7 +61,7 @@ import {
   buildAddProjectMethods,
   addProjectMethodEmptyText,
   buildCloneLocationOptions,
-  buildManualGithubRepositoryChoices,
+  buildManualRepositoryChoices,
   buildSuggestedParentDirectories,
   filterAddProjectHosts,
   joinDirectoryPath,
@@ -72,13 +74,18 @@ import {
 } from "@/components/project-picker-options";
 import { Shortcut } from "@/components/ui/shortcut";
 import { useKeyboardShortcutsAvailable } from "@/keyboard/availability";
+import { INTERNAL_EDITION } from "@getpaseo/protocol/internal-edition";
 import { getIsElectronRuntime } from "@/constants/layout";
 import { isNative, isWeb } from "@/constants/platform";
 import { pickDirectory } from "@/desktop/pick-directory";
 import { useFetchQuery } from "@/data/query";
 import { getOpenProjectFailureReason, registerProjectDescriptor } from "@/hooks/open-project";
 import { useIsLocalDaemon, useLocalDaemonServerId } from "@/hooks/use-is-local-daemon";
-import { useCloneGithubProject, useOpenProject } from "@/hooks/use-open-project";
+import {
+  useCloneForgeProject,
+  useCloneGithubProject,
+  useOpenProject,
+} from "@/hooks/use-open-project";
 import {
   OverlayLayerProvider,
   useGlobalWebOverlayLayer,
@@ -161,8 +168,12 @@ function FlowBackButton({ onPress }: { onPress: () => void }) {
   );
 }
 
+function cloneSourceIcon(): FlowRowOption["icon"] {
+  return getCloneSourceCopy().isForge ? GitLabIcon : GitHubIcon;
+}
+
 function methodIcon(method: AddProjectMethodId): FlowRowOption["icon"] {
-  if (method === "github") return GitHubIcon;
+  if (method === "github") return cloneSourceIcon();
   if (method === "browse") return FolderOpen;
   if (method === "new-directory") return FolderPlus;
   return Search;
@@ -182,7 +193,7 @@ function progressText(page: AddProjectPage): string {
 
 function emptyText(page: AddProjectPage, host: AddProjectHost | null): string {
   if (page.kind === "host") return "No connected hosts";
-  if (page.kind === "github-search") return "Enter a GitHub URL or owner/repo";
+  if (page.kind === "github-search") return getCloneSourceCopy().emptyHint;
   if (page.kind === "method") return addProjectMethodEmptyText(host);
   return "No matching options";
 }
@@ -196,10 +207,11 @@ interface QueryErrorInput {
 }
 
 function queryErrorText(input: QueryErrorInput): string | null {
+  const cloneSource = getCloneSourceCopy();
   if (input.searchesDirectories && input.directoryFailed) return "Unable to search directories";
-  if (input.githubFailed) return "Unable to search GitHub repositories";
+  if (input.githubFailed) return cloneSource.searchFailed;
   if (input.githubError) return input.githubError;
-  if (input.githubAvailable === false) return input.githubError ?? "GitHub search is unavailable";
+  if (input.githubAvailable === false) return input.githubError ?? cloneSource.searchUnavailable;
   return null;
 }
 
@@ -216,7 +228,7 @@ function pageTitle(page: AddProjectPage): string {
     case "directory-search":
       return "Search for directory";
     case "github-search":
-      return "Clone from GitHub";
+      return getCloneSourceCopy().pageTitle;
     case "github-location":
       return "Choose destination";
     case "new-directory-parent":
@@ -235,7 +247,7 @@ function pagePlaceholder(page: AddProjectInputPage): string {
     case "directory-search":
       return "Search directories or enter a path...";
     case "github-search":
-      return "Search or enter a GitHub repository...";
+      return getCloneSourceCopy().searchPlaceholder;
     case "github-location":
     case "new-directory-parent":
       return "Search parent directories or enter a path...";
@@ -326,6 +338,15 @@ export function AddProjectFlow({ request, onClose }: AddProjectFlowProps) {
   const githubCloneByHost = useHostFeatureMap(hostIds, "projectGithubClone");
   // COMPAT(workspaceGithubRepositorySearch): added in v0.1.108, remove gate after 2027-01-15.
   const githubSearchByHost = useHostFeatureMap(hostIds, "workspaceGithubRepositorySearch");
+  // Internal edition: clone and search both come from the host's configured forge.
+  // COMPAT(forgeRepositories): added in v0.11.0, remove gate after 2027-04-06.
+  const forgeRepositoriesByHost = useHostFeatureMap(hostIds, "forgeRepositories");
+  const cloneFeatureByHost = INTERNAL_EDITION.forgeRepositoryClone
+    ? forgeRepositoriesByHost
+    : githubCloneByHost;
+  const searchFeatureByHost = INTERNAL_EDITION.forgeRepositoryClone
+    ? forgeRepositoriesByHost
+    : githubSearchByHost;
   // COMPAT(projectCreateDirectory): added in v0.1.108, remove gate after 2027-01-15.
   const createDirectoryByHost = useHostFeatureMap(hostIds, "projectCreateDirectory");
   const localServerId = useLocalDaemonServerId();
@@ -342,20 +363,20 @@ export function AddProjectFlow({ request, onClose }: AddProjectFlowProps) {
             label: host.label,
             canAddProject,
             canBrowse: canAddProject && getIsElectronRuntime() && localServerId === host.serverId,
-            canCloneGithubRepositories: githubCloneByHost.get(host.serverId) === true,
-            canSearchGithubRepositories: githubSearchByHost.get(host.serverId) === true,
+            canCloneGithubRepositories: cloneFeatureByHost.get(host.serverId) === true,
+            canSearchGithubRepositories: searchFeatureByHost.get(host.serverId) === true,
             canCreateDirectory: createDirectoryByHost.get(host.serverId) === true,
           },
         ];
       }),
     [
       connectionStatuses,
+      cloneFeatureByHost,
       createDirectoryByHost,
-      githubCloneByHost,
-      githubSearchByHost,
       hosts,
       localServerId,
       projectAddByHost,
+      searchFeatureByHost,
       stableProjectIdentityByHost,
     ],
   );
@@ -373,6 +394,10 @@ export function AddProjectFlow({ request, onClose }: AddProjectFlowProps) {
   const recommendedPaths = useRecommendedProjectPaths(hostId);
   const openProject = useOpenProject(hostId);
   const cloneGithubProject = useCloneGithubProject(hostId);
+  const cloneForgeProject = useCloneForgeProject(hostId);
+  const cloneProject = INTERNAL_EDITION.forgeRepositoryClone
+    ? cloneForgeProject
+    : cloneGithubProject;
   const upsertProject = useCallback(
     (
       targetServerId: string,
@@ -438,7 +463,10 @@ export function AddProjectFlow({ request, onClose }: AddProjectFlowProps) {
     queryKey: ["add-project-flow-github", hostId, debouncedQuery],
     queryFn: async () => {
       if (!client) throw new Error("Host is unavailable");
-      const payload = await client.searchGithubRepositories({ query: debouncedQuery, limit: 30 });
+      const searchInput = { query: debouncedQuery, limit: 30 };
+      const payload = INTERNAL_EDITION.forgeRepositoryClone
+        ? await client.searchForgeRepositories(searchInput)
+        : await client.searchGithubRepositories(searchInput);
       return { query: debouncedQuery, payload };
     },
     enabled: Boolean(client && page.kind === "github-search" && host?.canSearchGithubRepositories),
@@ -556,7 +584,7 @@ export function AddProjectFlow({ request, onClose }: AddProjectFlowProps) {
         setPageStatus(current, "github-location", { isSubmitting: true, error: null }),
       );
       try {
-        const result = await cloneGithubProject(
+        const result = await cloneProject(
           locationPage.repository.cloneUrl,
           parentPath,
           locationPage.repository.cloneProtocol,
@@ -583,7 +611,7 @@ export function AddProjectFlow({ request, onClose }: AddProjectFlowProps) {
         submissionInFlightRef.current = false;
       }
     },
-    [cloneGithubProject, openNewWorkspaceForProject],
+    [cloneProject, openNewWorkspaceForProject],
   );
   const rows = useMemo<FlowRowOption[]>(() => {
     if (page.kind === "host") {
@@ -648,7 +676,7 @@ export function AddProjectFlow({ request, onClose }: AddProjectFlowProps) {
       );
       const manualRepositories = hasExactSearchResult
         ? []
-        : buildManualGithubRepositoryChoices(page.query);
+        : buildManualRepositoryChoices(page.query);
       const repositoryChoices: GithubRepositoryChoice[] = [...manualRepositories, ...repositories];
       return repositoryChoices.map((repository) => ({
         id: repository.id,
@@ -656,7 +684,7 @@ export function AddProjectFlow({ request, onClose }: AddProjectFlowProps) {
           ? `${repository.nameWithOwner} via ${repository.cloneProtocol.toUpperCase()}`
           : repository.nameWithOwner,
         subtitle: repository.description,
-        icon: GitHubIcon,
+        icon: cloneSourceIcon(),
         testID: `add-project-flow-repository-${repository.id}`,
         select: () =>
           setState((current) => openGithubLocationPage(current, page.hostId, repository)),

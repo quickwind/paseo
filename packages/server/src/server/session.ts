@@ -231,6 +231,11 @@ import {
   GitHubCommandError,
   type GitHubService,
 } from "../services/github-service.js";
+import {
+  ForgeAuthenticationError,
+  ForgeCliMissingError,
+  ForgeCommandError,
+} from "../services/forge-cli-command.js";
 import type { ForgeService } from "../services/forge-service.js";
 import {
   resolveWorkspaceRootAgent,
@@ -395,6 +400,10 @@ type FetchWorkspacesResponsePayload = Extract<
 type FetchWorkspacesResponseEntry = FetchWorkspacesResponsePayload["entries"][number];
 type FetchWorkspacesResponsePageInfo = FetchWorkspacesResponsePayload["pageInfo"];
 type WorkspaceProjectDescriptorPayload = FetchWorkspacesResponsePayload["emptyProjects"][number];
+type WorkspaceForgeSearchRepositoriesResponsePayload = Extract<
+  SessionOutboundMessage,
+  { type: "workspace.forge.search_repositories.response" }
+>["payload"];
 type WorkspaceGithubSearchRepositoriesResponsePayload = Extract<
   SessionOutboundMessage,
   { type: "workspace.github.search_repositories.response" }
@@ -2907,6 +2916,10 @@ export class Session {
         return this.handleWorkspaceGithubSearchRepositoriesRequest(msg);
       case "project.github.clone.request":
         return this.handleProjectGithubCloneRequest(msg);
+      case "workspace.forge.search_repositories.request":
+        return this.handleWorkspaceForgeSearchRepositoriesRequest(msg);
+      case "project.forge.clone.request":
+        return this.handleProjectForgeCloneRequest(msg);
       case "archive_workspace_request":
         return this.handleArchiveWorkspaceRequest(msg);
       case "project.remove.request":
@@ -7007,6 +7020,72 @@ export class Session {
     }
   }
 
+  // Internal edition: repository search for Add Project, answered by the
+  // configured GitLab catalog. The statuses mirror the GitHub search response.
+  private async handleWorkspaceForgeSearchRepositoriesRequest(
+    request: Extract<
+      SessionInboundMessage,
+      { type: "workspace.forge.search_repositories.request" }
+    >,
+  ): Promise<void> {
+    const catalog = this.workspaceGitService.getForgeRepositoryCatalog?.() ?? null;
+    const respond = (payload: WorkspaceForgeSearchRepositoriesResponsePayload) =>
+      this.emit({ type: "workspace.forge.search_repositories.response", payload });
+    if (!catalog) {
+      respond({
+        status: "unavailable",
+        requestId: request.requestId,
+        repositories: [],
+        reason: "not_configured",
+        available: false,
+        error: "No forge is configured on this host",
+      });
+      return;
+    }
+    try {
+      const repositories = await catalog.searchRepositories({
+        query: request.query,
+        limit: request.limit,
+      });
+      respond({
+        status: "success",
+        requestId: request.requestId,
+        forge: catalog.forge,
+        repositories,
+        available: true,
+        error: null,
+      });
+    } catch (error) {
+      this.sessionLogger.warn({ err: error }, "Forge repository search failed");
+      const base = { requestId: request.requestId, forge: catalog.forge, repositories: [] };
+      if (error instanceof ForgeCliMissingError) {
+        respond({
+          ...base,
+          status: "unavailable",
+          reason: "cli_missing",
+          available: false,
+          error: error.message,
+        });
+      } else if (error instanceof ForgeAuthenticationError) {
+        respond({
+          ...base,
+          status: "unauthenticated",
+          available: false,
+          error: "GitLab is not authenticated. Check the python-gitlab token on the host.",
+        });
+      } else {
+        const commandError = error instanceof ForgeCommandError ? error.stderr.trim() : "";
+        respond({
+          ...base,
+          status: "error",
+          available: true,
+          error:
+            commandError || (error instanceof Error ? error.message : "Repository search failed"),
+        });
+      }
+    }
+  }
+
   private async handleProjectGithubCloneRequest(
     request: Extract<SessionInboundMessage, { type: "project.github.clone.request" }>,
   ): Promise<void> {
@@ -7018,51 +7097,22 @@ export class Session {
         cloneProtocol: request.cloneProtocol,
       });
       normalizedRepo = repo.displayName;
-      const targetParent = resolve(expandTilde(request.targetDirectory.trim()));
-      checkoutPath = resolve(targetParent, repo.name);
-      if (!this.isPathWithinRoot(targetParent, checkoutPath)) {
-        throw new Error("Resolved checkout path must stay inside the target directory");
-      }
-
-      await mkdir(targetParent, { recursive: true });
-      try {
-        await lstat(checkoutPath);
-        throw new Error(`Checkout path already exists: ${checkoutPath}`);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-          throw error;
-        }
-      }
-
-      const cloneStagingPath = await mkdtemp(resolve(targetParent, ".paseo-clone-"));
-      try {
-        await runGitCommand(["clone", repo.cloneUrl, cloneStagingPath], {
-          cwd: targetParent,
-          timeout: 5 * 60 * 1000,
-          maxOutputBytes: 1024 * 1024,
-          logger: this.sessionLogger,
-        });
-        await rename(cloneStagingPath, checkoutPath);
-      } catch (error) {
-        await rm(cloneStagingPath, { recursive: true, force: true }).catch((cleanupError) => {
-          this.sessionLogger.warn(
-            { err: cleanupError, cloneStagingPath },
-            "Failed to clean up partial GitHub clone",
-          );
-        });
-        throw error;
-      }
-
-      const project =
-        await this.workspaceProvisioning.findOrCreateProjectForDirectory(checkoutPath);
+      const cloned = await this.cloneRepositoryIntoDirectory({
+        cloneUrl: repo.cloneUrl,
+        name: repo.name,
+        targetDirectory: request.targetDirectory,
+        onCheckoutPath: (path) => {
+          checkoutPath = path;
+        },
+      });
 
       this.emit({
         type: "project.github.clone.response",
         payload: {
           requestId: request.requestId,
           repo: repo.displayName,
-          checkoutPath,
-          project: await this.buildProjectDescriptor(project),
+          checkoutPath: cloned.checkoutPath,
+          project: await this.buildProjectDescriptor(cloned.project),
           error: null,
         },
       });
@@ -7083,6 +7133,110 @@ export class Session {
         },
       });
     }
+  }
+
+  // Internal edition: Add Project clones from the configured GitLab through the
+  // forge-neutral RPCs. The catalog decides what a shorthand resolves to.
+  private async handleProjectForgeCloneRequest(
+    request: Extract<SessionInboundMessage, { type: "project.forge.clone.request" }>,
+  ): Promise<void> {
+    let normalizedRepo = request.repo;
+    let checkoutPath: string | null = null;
+    try {
+      const catalog = this.workspaceGitService.getForgeRepositoryCatalog?.() ?? null;
+      if (!catalog) {
+        throw new Error("No forge is configured on this host");
+      }
+      const repo = catalog.resolveCloneTarget({
+        repo: request.repo,
+        cloneProtocol: request.cloneProtocol,
+      });
+      normalizedRepo = repo.displayName;
+      const cloned = await this.cloneRepositoryIntoDirectory({
+        cloneUrl: repo.cloneUrl,
+        name: repo.name,
+        targetDirectory: request.targetDirectory,
+        onCheckoutPath: (path) => {
+          checkoutPath = path;
+        },
+      });
+
+      this.emit({
+        type: "project.forge.clone.response",
+        payload: {
+          requestId: request.requestId,
+          repo: repo.displayName,
+          checkoutPath: cloned.checkoutPath,
+          project: await this.buildProjectDescriptor(cloned.project),
+          error: null,
+        },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to clone repository";
+      this.sessionLogger.error(
+        { err: error, repo: request.repo, targetDirectory: request.targetDirectory },
+        "Failed to clone forge project",
+      );
+      this.emit({
+        type: "project.forge.clone.response",
+        payload: {
+          requestId: request.requestId,
+          repo: normalizedRepo,
+          checkoutPath,
+          project: null,
+          error: message,
+        },
+      });
+    }
+  }
+
+  private async cloneRepositoryIntoDirectory(input: {
+    cloneUrl: string;
+    name: string;
+    targetDirectory: string;
+    onCheckoutPath: (checkoutPath: string) => void;
+  }): Promise<{
+    checkoutPath: string;
+    project: Awaited<ReturnType<WorkspaceProvisioningService["findOrCreateProjectForDirectory"]>>;
+  }> {
+    const targetParent = resolve(expandTilde(input.targetDirectory.trim()));
+    const checkoutPath = resolve(targetParent, input.name);
+    input.onCheckoutPath(checkoutPath);
+    if (!this.isPathWithinRoot(targetParent, checkoutPath)) {
+      throw new Error("Resolved checkout path must stay inside the target directory");
+    }
+
+    await mkdir(targetParent, { recursive: true });
+    try {
+      await lstat(checkoutPath);
+      throw new Error(`Checkout path already exists: ${checkoutPath}`);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw error;
+      }
+    }
+
+    const cloneStagingPath = await mkdtemp(resolve(targetParent, ".paseo-clone-"));
+    try {
+      await runGitCommand(["clone", input.cloneUrl, cloneStagingPath], {
+        cwd: targetParent,
+        timeout: 5 * 60 * 1000,
+        maxOutputBytes: 1024 * 1024,
+        logger: this.sessionLogger,
+      });
+      await rename(cloneStagingPath, checkoutPath);
+    } catch (error) {
+      await rm(cloneStagingPath, { recursive: true, force: true }).catch((cleanupError) => {
+        this.sessionLogger.warn(
+          { err: cleanupError, cloneStagingPath },
+          "Failed to clean up partial clone",
+        );
+      });
+      throw error;
+    }
+
+    const project = await this.workspaceProvisioning.findOrCreateProjectForDirectory(checkoutPath);
+    return { checkoutPath, project };
   }
 
   // Named accessor: the workspace descriptor builder and the git-watch test both read a workspace's

@@ -4,6 +4,7 @@ import {
   GitLabForgeConfigSchema,
   matchesGitLabForgeHost,
   parseGitLabProjectPath,
+  resolveGitLabCloneTarget,
   resolveGitLabForgeHosts,
 } from "./gitlab-forge-config.js";
 
@@ -94,5 +95,68 @@ describe("parseGitLabProjectPath", () => {
     expect(
       parseGitLabProjectPath(prefixed, "https://git.corp.example/other/project.git"),
     ).toBeNull();
+  });
+});
+
+describe("resolveGitLabCloneTarget", () => {
+  const https = GitLabForgeConfigSchema.parse({ url: "https://git.corp.example" });
+
+  it("builds an https clone URL from shorthand when no ssh host is configured", () => {
+    expect(resolveGitLabCloneTarget(https, { repo: "payments/core/billing" })).toEqual({
+      name: "billing",
+      displayName: "payments/core/billing",
+      cloneUrl: "https://git.corp.example/payments/core/billing.git",
+    });
+  });
+
+  it("prefers ssh when an ssh host is configured, with the port form when it has a port", () => {
+    const withPort = GitLabForgeConfigSchema.parse({
+      url: "https://git.corp.example",
+      sshHost: "ssh.corp.example:2222",
+    });
+    const withoutPort = GitLabForgeConfigSchema.parse({
+      url: "https://git.corp.example",
+      sshHost: "ssh.corp.example",
+    });
+    expect(resolveGitLabCloneTarget(withPort, { repo: "a/b" }).cloneUrl).toBe(
+      "ssh://git@ssh.corp.example:2222/a/b.git",
+    );
+    expect(resolveGitLabCloneTarget(withoutPort, { repo: "a/b.git" }).cloneUrl).toBe(
+      "git@ssh.corp.example:a/b.git",
+    );
+    expect(
+      resolveGitLabCloneTarget(withPort, { repo: "a/b", cloneProtocol: "https" }).cloneUrl,
+    ).toBe("https://git.corp.example/a/b.git");
+  });
+
+  it("keeps a full remote URL on the configured host as given", () => {
+    const config = GitLabForgeConfigSchema.parse({
+      url: "https://git.corp.example",
+      sshHost: "ssh.corp.example:2222",
+    });
+    for (const repo of [
+      "https://git.corp.example/a/sub/b.git",
+      "git@ssh.corp.example:a/sub/b.git",
+      "ssh://git@ssh.corp.example:2222/a/sub/b.git",
+    ]) {
+      expect(resolveGitLabCloneTarget(config, { repo })).toEqual({
+        name: "b",
+        displayName: "a/sub/b",
+        cloneUrl: repo,
+      });
+    }
+  });
+
+  it.each([
+    ["https://github.com/owner/repo.git", /Only repositories on git\.corp\.example/],
+    ["git@gitlab.com:group/project.git", /Only repositories on/],
+    ["http://git.corp.example/a/b.git", /plain http/],
+    ["onlyone", /group\/project format/],
+    ["a/../b", /group\/project format/],
+    ["a/-b", /group\/project format/],
+    ["a/b c", /group\/project format/],
+    ["", /required/],
+  ])("rejects %s", (repo, message) => {
+    expect(() => resolveGitLabCloneTarget(https, { repo })).toThrow(message);
   });
 });

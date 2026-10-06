@@ -72,6 +72,10 @@ Forge-neutral behavior currently uses `checkout.forge.*` for checkout-scoped ope
   forge-neutral and whose implementation dispatches through the forge resolver.
 - `checkout.github.*` for existing GitHub-specific compatibility RPCs while
   callers migrate to the neutral `checkout.forge.*` shape
+- `workspace.forge.search_repositories.*` and `project.forge.clone.*` for host-level
+  repository search and clone, which have no checkout to resolve a forge from. The
+  daemon answers from its configured forge, and `server_info.features.forgeRepositories`
+  gates them. `workspace.github.*` and `project.github.*` stay for GitHub.
 
 Do not put GitHub-specific enums or semantics into `checkout.forge.*` RPC names. A generic forge RPC should only exist when the behavior is genuinely forge-neutral.
 

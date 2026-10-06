@@ -1481,6 +1481,21 @@ export const ko: TranslationResources = {
       loadFailed: "데몬 로그를 불러올 수 없습니다: {{message}}",
     },
   },
+  addProjectFlow: {
+    forgeClone: {
+      method: "Clone from GitLab",
+      methodDescriptionSearch: "Search projects available to your GitLab account",
+      methodDescriptionManual: "Enter a GitLab project path or URL",
+      methodDescriptionUpdate: "Update this host to clone GitLab projects",
+      pageTitle: "Clone from GitLab",
+      searchPlaceholder: "Search or enter a GitLab project...",
+      emptyHint: "Enter a GitLab project path or URL",
+      searchFailed: "Unable to search GitLab projects",
+      searchUnavailable: "GitLab search is unavailable",
+      manualUrl: "Clone this project URL",
+      manualPath: "Clone this GitLab project",
+    },
+  },
   openProject: {
     tiles: {
       addProject: {

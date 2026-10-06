@@ -19,6 +19,7 @@ import {
   addProjectMethodEmptyText,
   buildAddProjectMethods,
   buildCloneLocationOptions,
+  buildManualForgeRepositoryChoices,
   buildManualGithubRepositoryChoices,
 } from "./options";
 
@@ -135,8 +136,9 @@ describe("Add Project options", () => {
       },
       {
         id: "github",
-        label: "Clone from GitHub",
-        description: "Update this host to clone GitHub repositories",
+        // Internal edition: the clone method targets the configured GitLab.
+        label: "Clone from GitLab",
+        description: "Update this host to clone GitLab projects",
         disabled: true,
       },
       {
@@ -161,6 +163,35 @@ describe("Add Project options", () => {
       expect.objectContaining({ cloneProtocol: "ssh", cloneUrl: "getpaseo/paseo" }),
     ]);
     expect(buildManualGithubRepositoryChoices("paseo")).toEqual([]);
+  });
+
+  it("offers one forge clone choice per typed project path or URL, leaving the protocol to the host", () => {
+    expect(buildManualForgeRepositoryChoices("payments/core/billing")).toEqual([
+      {
+        id: "manual:payments/core/billing",
+        nameWithOwner: "payments/core/billing",
+        cloneUrl: "payments/core/billing",
+        description: "Clone this GitLab project",
+        updatedAt: null,
+      },
+    ]);
+    expect(buildManualForgeRepositoryChoices("payments/billing.git")).toEqual([
+      expect.objectContaining({ cloneUrl: "payments/billing" }),
+    ]);
+    expect(
+      buildManualForgeRepositoryChoices("git@git.corp.example:payments/core/billing.git"),
+    ).toEqual([
+      {
+        id: "manual:git@git.corp.example:payments/core/billing.git",
+        nameWithOwner: "payments/core/billing",
+        cloneUrl: "git@git.corp.example:payments/core/billing.git",
+        description: "Clone this project URL",
+        updatedAt: null,
+      },
+    ]);
+    expect(buildManualForgeRepositoryChoices("billing")).toEqual([]);
+    expect(buildManualForgeRepositoryChoices("a//b")).toEqual([]);
+    expect(buildManualForgeRepositoryChoices("  ")).toEqual([]);
   });
 
   it("shows final clone paths while retaining parent paths as values", () => {

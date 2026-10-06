@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  cloneForgeProjectDirectly,
   cloneGithubProjectDirectly,
   getOpenProjectFailureReason,
   openProjectDirectly,
@@ -223,6 +224,67 @@ describe("cloneGithubProjectDirectly", () => {
     });
     expect(session.projects).toEqual([]);
     expect(session.hydrated).toEqual([]);
+  });
+});
+
+describe("cloneForgeProjectDirectly", () => {
+  function createFakeForgeCloneClient(project: ReturnType<typeof buildProjectPayload> | null) {
+    const clones: RecordedClone[] = [];
+    return {
+      clones,
+      cloneForgeProject: async (input: RecordedClone) => {
+        clones.push(input);
+        return {
+          requestId: "request-4",
+          repo: "group/sub/project",
+          checkoutPath: PROJECT_PATH,
+          error: project ? null : "Only repositories on git.corp.example can be cloned",
+          project,
+        };
+      },
+    };
+  }
+
+  it("registers a project cloned from the forge and leaves the protocol to the host", async () => {
+    const session = createFakeSession();
+    const projectPayload = buildProjectPayload();
+    const forge = createFakeForgeCloneClient(projectPayload);
+
+    const result = await cloneForgeProjectDirectly({
+      serverId: SERVER_ID,
+      repo: " group/sub/project ",
+      targetDirectory: " ~/workspace ",
+      isConnected: true,
+      client: forge,
+      upsertProject: session.upsertProject,
+      setHasHydratedWorkspaces: session.setHasHydratedWorkspaces,
+    });
+
+    expect(result).toEqual({ ok: true, project: projectPayload });
+    expect(forge.clones).toEqual([{ repo: "group/sub/project", targetDirectory: "~/workspace" }]);
+    expect(session.projects).toHaveLength(1);
+    expect(session.hydrated).toEqual([{ serverId: SERVER_ID, hydrated: true }]);
+  });
+
+  it("surfaces the host's error and registers nothing when the clone fails", async () => {
+    const session = createFakeSession();
+
+    const result = await cloneForgeProjectDirectly({
+      serverId: SERVER_ID,
+      repo: "https://github.com/a/b.git",
+      targetDirectory: "~/workspace",
+      isConnected: true,
+      client: createFakeForgeCloneClient(null),
+      upsertProject: session.upsertProject,
+      setHasHydratedWorkspaces: session.setHasHydratedWorkspaces,
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      errorCode: null,
+      error: "Only repositories on git.corp.example can be cloned",
+    });
+    expect(session.projects).toEqual([]);
   });
 });
 

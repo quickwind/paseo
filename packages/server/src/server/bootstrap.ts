@@ -123,6 +123,10 @@ import { WorkspaceSetupRuntime } from "./workspace-setup-runtime.js";
 import { createWorkspaceLabelService } from "./workspace-labels/index.js";
 import { createGitHubService } from "../services/github-service.js";
 import { createGatedForgeRegistry, type ForgeRegistry } from "../services/forge-registry.js";
+import {
+  createGitLabRepositoryCatalog,
+  type ForgeRepositoryCatalog,
+} from "../services/forge-repository-catalog.js";
 import type { GitLabForgeConfig } from "../services/gitlab-forge-config.js";
 import { createPaseoWorktree as createRegisteredPaseoWorktree } from "./paseo-worktree-service.js";
 import { createWorkspaceProvisioningService } from "./session/workspace-provisioning/workspace-provisioning-service.js";
@@ -614,6 +618,15 @@ function resolveForgeRegistry(config: PaseoDaemonConfig): ForgeRegistry | undefi
   });
 }
 
+// Internal edition: Add Project searches and clones from the configured GitLab only.
+function resolveForgeRepositories(config: PaseoDaemonConfig): ForgeRepositoryCatalog | null {
+  const gitlab = config.forge?.gitlab;
+  if (!gitlab || !config.allowedForgeIds?.includes("gitlab")) {
+    return null;
+  }
+  return createGitLabRepositoryCatalog({ config: gitlab });
+}
+
 export async function createPaseoDaemon(
   config: PaseoDaemonConfig,
   rootLogger: Logger,
@@ -936,6 +949,7 @@ export async function createPaseoDaemon(
     worktreesRoot: config.worktreesRoot,
     // Internal edition: only allowlisted forges resolve (see docs/internal-edition.md).
     forgeRegistry: resolveForgeRegistry(config),
+    forgeRepositories: resolveForgeRepositories(config),
     deps: {
       forgeOverrides: { github },
     },

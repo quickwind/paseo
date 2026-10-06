@@ -72,14 +72,26 @@ export function createCli(): Command {
   addJsonAndDaemonHostOptions(
     program
       .command("clone")
-      .description("Clone a GitHub repo and register it as a Paseo workspace")
-      .argument("<repo>", "GitHub repo in owner/repo format or a full git remote URL")
+      .description(
+        INTERNAL_EDITION.forgeRepositoryClone
+          ? "Clone a project from the company GitLab and register it as a Paseo workspace"
+          : "Clone a GitHub repo and register it as a Paseo workspace",
+      )
+      .argument(
+        "<repo>",
+        INTERNAL_EDITION.forgeRepositoryClone
+          ? "GitLab project path such as group/subgroup/project, or a full git remote URL on the configured GitLab host"
+          : "GitHub repo in owner/repo format or a full git remote URL",
+      )
       .requiredOption("--dir <path>", "Parent directory to clone into (for example: ~/workspace)"),
   )
     .addOption(
-      new Option("--protocol <protocol>", "Protocol for owner/repo shorthand repositories").choices(
-        ["https", "ssh"],
-      ),
+      new Option(
+        "--protocol <protocol>",
+        INTERNAL_EDITION.forgeRepositoryClone
+          ? "Protocol for project path shorthand (default: ssh when the daemon config names an ssh host, else https)"
+          : "Protocol for owner/repo shorthand repositories",
+      ).choices(["https", "ssh"]),
     )
     .action(withOutput(runCloneCommand));
 

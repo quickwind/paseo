@@ -1,5 +1,6 @@
 import type { Command } from "commander";
 import { isCompleteGitRemote } from "@getpaseo/protocol/git-remote";
+import { INTERNAL_EDITION } from "@getpaseo/protocol/internal-edition";
 import { connectToDaemon } from "../utils/client.js";
 import type { CommandError, OutputSchema, SingleResult } from "../output/index.js";
 import type { CommandOptions } from "../output/with-output.js";
@@ -30,6 +31,59 @@ function cmdError(code: string, message: string, details?: string): CommandError
   return details ? { code, message, details } : { code, message };
 }
 
+// Internal edition: the shorthand is `group/project` on the daemon's configured
+// GitLab, and the daemon picks SSH or HTTPS from its forge config unless
+// --protocol is given. See docs/internal-edition.md.
+async function runForgeCloneCommand(
+  repo: string,
+  options: CloneCommandOptions,
+  targetDirectory: string,
+): Promise<SingleResult<CloneResult>> {
+  const client = await connectToDaemon({ target: options.daemonTarget });
+
+  if (client.getLastServerInfoMessage()?.features?.forgeRepositories !== true) {
+    await client.close().catch(() => {});
+    throw cmdError(
+      "UNSUPPORTED_BY_HOST",
+      "This daemon has no GitLab configured for cloning.",
+      'Add "forge": { "gitlab": { "url": "https://..." } } to the daemon config.json and restart the daemon.',
+    );
+  }
+
+  try {
+    const response = await client.cloneForgeProject({
+      repo,
+      targetDirectory,
+      ...(options.protocol ? { cloneProtocol: options.protocol } : {}),
+    });
+    if (response.error || !response.project || !response.checkoutPath) {
+      throw cmdError(
+        "CLONE_FAILED",
+        `Failed to clone GitLab project: ${response.error ?? "no project returned"}`,
+      );
+    }
+
+    return {
+      type: "single",
+      data: {
+        repo: response.repo,
+        checkoutPath: response.checkoutPath,
+        projectId: response.project.projectId,
+        projectName: response.project.projectDisplayName,
+      },
+      schema: cloneSchema,
+    };
+  } catch (err) {
+    if (err && typeof err === "object" && "code" in err) {
+      throw err;
+    }
+    const message = err instanceof Error ? err.message : String(err);
+    throw cmdError("CLONE_FAILED", `Failed to clone GitLab project: ${message}`);
+  } finally {
+    await client.close().catch(() => {});
+  }
+}
+
 export async function runCloneCommand(
   repo: string,
   options: CloneCommandOptions,
@@ -38,6 +92,9 @@ export async function runCloneCommand(
   const targetDirectory = typeof options.dir === "string" ? options.dir.trim() : "";
   if (!targetDirectory) {
     throw cmdError("INVALID_ARGUMENT", "--dir is required");
+  }
+  if (INTERNAL_EDITION.forgeRepositoryClone) {
+    return runForgeCloneCommand(repo, options, targetDirectory);
   }
   const repoIsCompleteRemote = isCompleteGitRemote(repo);
   if (!repoIsCompleteRemote && !options.protocol) {

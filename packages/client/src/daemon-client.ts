@@ -82,6 +82,8 @@ import type {
   ProjectCreateDirectoryResponse,
   OpenProjectResponseMessage,
   WorkspaceGithubSearchRepositoriesResponse,
+  WorkspaceForgeSearchRepositoriesResponse,
+  ProjectForgeCloneResponse,
   ProjectGithubCloneProtocol,
   ProjectGithubCloneResponse,
   ArchiveWorkspaceResponseMessage,
@@ -910,6 +912,9 @@ export type ProjectCreateDirectoryPayload = ProjectCreateDirectoryResponse["payl
 export type WorkspaceGithubSearchRepositoriesPayload =
   WorkspaceGithubSearchRepositoriesResponse["payload"];
 type ProjectGithubClonePayload = ProjectGithubCloneResponse["payload"];
+export type WorkspaceForgeSearchRepositoriesPayload =
+  WorkspaceForgeSearchRepositoriesResponse["payload"];
+type ProjectForgeClonePayload = ProjectForgeCloneResponse["payload"];
 type ArchiveWorkspacePayload = ArchiveWorkspaceResponseMessage["payload"];
 type WorkspaceSetupStatusPayload = WorkspaceSetupStatusResponseMessage["payload"];
 
@@ -2665,6 +2670,44 @@ export class DaemonClient {
       ...(input.cloneProtocol ? { cloneProtocol: input.cloneProtocol } : {}),
     } as const;
     return this.sendNamespacedCorrelatedSessionRequest<"project.github.clone.response">({
+      requestId,
+      message,
+      timeout: PROJECT_GITHUB_CLONE_TIMEOUT_MS,
+    });
+  }
+
+  /** Internal edition: repository search for Add Project, answered by the host's forge. */
+  async searchForgeRepositories(
+    input: { query: string; limit?: number },
+    requestId?: string,
+  ): Promise<WorkspaceForgeSearchRepositoriesPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest<"workspace.forge.search_repositories.response">(
+      {
+        requestId,
+        message: {
+          type: "workspace.forge.search_repositories.request",
+          query: input.query,
+          limit: input.limit,
+        },
+      },
+    );
+  }
+
+  /**
+   * Internal edition: clone `group/project` shorthand or a remote URL on the
+   * host's forge. The host picks the clone protocol unless one is given.
+   */
+  async cloneForgeProject(
+    input: { repo: string; targetDirectory: string; cloneProtocol?: ProjectGithubCloneProtocol },
+    requestId?: string,
+  ): Promise<ProjectForgeClonePayload> {
+    const message = {
+      type: "project.forge.clone.request",
+      repo: input.repo,
+      targetDirectory: input.targetDirectory,
+      ...(input.cloneProtocol ? { cloneProtocol: input.cloneProtocol } : {}),
+    } as const;
+    return this.sendNamespacedCorrelatedSessionRequest<"project.forge.clone.response">({
       requestId,
       message,
       timeout: PROJECT_GITHUB_CLONE_TIMEOUT_MS,

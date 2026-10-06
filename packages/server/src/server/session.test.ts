@@ -56,6 +56,11 @@ import {
   GitHubCommandError,
   type GitHubService,
 } from "../services/github-service.js";
+import {
+  ForgeAuthenticationError,
+  ForgeCliMissingError,
+  ForgeCommandError,
+} from "../services/forge-cli-command.js";
 import type { CheckDetails, ForgeService } from "../services/forge-service.js";
 import type { GitHubPullRequestStatusFacts } from "../services/github-facts.js";
 
@@ -306,6 +311,7 @@ interface SessionForTestOptions {
     resolveRepoRemoteUrl?: ReturnType<typeof vi.fn>;
     resolveRepoRoot?: ReturnType<typeof vi.fn>;
     resolveForge?: ReturnType<typeof vi.fn>;
+    getForgeRepositoryCatalog?: ReturnType<typeof vi.fn>;
     getWorkspaceGitMetadata?: ReturnType<typeof vi.fn>;
     getProjectSlug?: ReturnType<typeof vi.fn>;
   };
@@ -1076,6 +1082,277 @@ describe("project command-center RPCs", () => {
     } finally {
       rmSync(parentDirectory, { recursive: true, force: true });
     }
+  });
+});
+
+// Internal edition: Add Project searches and clones through the forge catalog.
+describe("forge repository RPCs", () => {
+  function catalogWith(overrides: Record<string, unknown> = {}) {
+    return {
+      forge: "gitlab",
+      searchRepositories: vi.fn().mockResolvedValue([]),
+      resolveCloneTarget: vi.fn(),
+      ...overrides,
+    };
+  }
+
+  test("returns repositories from the configured catalog", async () => {
+    const messages: SessionOutboundMessage[] = [];
+    const repositories = [
+      {
+        id: "42",
+        name: "billing",
+        nameWithOwner: "payments/core/billing",
+        description: null,
+        updatedAt: "2026-10-01T00:00:00Z",
+        cloneUrl: "git@git.corp.example:payments/core/billing.git",
+      },
+    ];
+    const catalog = catalogWith({ searchRepositories: vi.fn().mockResolvedValue(repositories) });
+    const session = createSessionForTest({
+      messages,
+      workspaceGitService: { getForgeRepositoryCatalog: vi.fn(() => catalog) },
+    });
+
+    await session.handleMessage({
+      type: "workspace.forge.search_repositories.request",
+      query: "billing",
+      limit: 10,
+      requestId: "req-forge-search",
+    });
+
+    expect(catalog.searchRepositories).toHaveBeenCalledWith({ query: "billing", limit: 10 });
+    expect(messages).toEqual([
+      {
+        type: "workspace.forge.search_repositories.response",
+        payload: {
+          status: "success",
+          requestId: "req-forge-search",
+          forge: "gitlab",
+          repositories,
+          available: true,
+          error: null,
+        },
+      },
+    ]);
+  });
+
+  test("reports not_configured when the host has no forge", async () => {
+    const messages: SessionOutboundMessage[] = [];
+    const session = createSessionForTest({
+      messages,
+      workspaceGitService: { getForgeRepositoryCatalog: vi.fn(() => null) },
+    });
+
+    await session.handleMessage({
+      type: "workspace.forge.search_repositories.request",
+      query: "",
+      requestId: "req-forge-none",
+    });
+
+    expect(messages).toEqual([
+      {
+        type: "workspace.forge.search_repositories.response",
+        payload: {
+          status: "unavailable",
+          requestId: "req-forge-none",
+          repositories: [],
+          reason: "not_configured",
+          available: false,
+          error: "No forge is configured on this host",
+        },
+      },
+    ]);
+  });
+
+  test.each([
+    {
+      error: new ForgeCliMissingError("python-gitlab CLI `gitlab` not found"),
+      expected: {
+        status: "unavailable",
+        reason: "cli_missing",
+        available: false,
+        error: "python-gitlab CLI `gitlab` not found",
+      },
+    },
+    {
+      error: new ForgeAuthenticationError("auth", { stderr: "401" }),
+      expected: {
+        status: "unauthenticated",
+        available: false,
+        error: "GitLab is not authenticated. Check the python-gitlab token on the host.",
+      },
+    },
+    {
+      error: new ForgeCommandError(
+        { brand: "GitLab", binary: "gitlab" },
+        { args: ["project", "list"], cwd: "/tmp", exitCode: 1, stderr: "500 Server Error" },
+      ),
+      expected: { status: "error", available: true, error: "500 Server Error" },
+    },
+  ])("maps $expected.status failures from the catalog", async ({ error, expected }) => {
+    const messages: SessionOutboundMessage[] = [];
+    const catalog = catalogWith({ searchRepositories: vi.fn().mockRejectedValue(error) });
+    const session = createSessionForTest({
+      messages,
+      workspaceGitService: { getForgeRepositoryCatalog: vi.fn(() => catalog) },
+    });
+
+    await session.handleMessage({
+      type: "workspace.forge.search_repositories.request",
+      query: "x",
+      requestId: "req-forge-error",
+    });
+
+    expect(messages).toEqual([
+      {
+        type: "workspace.forge.search_repositories.response",
+        payload: {
+          requestId: "req-forge-error",
+          forge: "gitlab",
+          repositories: [],
+          ...expected,
+        },
+      },
+    ]);
+  });
+
+  test("clones the resolved repository and registers its project", async () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "paseo-forge-clone-")));
+    const target = join(root, "target");
+    const cloneUrl = "git@git.corp.example:payments/core/billing.git";
+    gitCommandMocks.runGitCommand.mockReset();
+    gitCommandMocks.runGitCommand.mockResolvedValueOnce({
+      stdout: "",
+      stderr: "",
+      truncated: false,
+      exitCode: 0,
+      signal: null,
+    });
+    const messages: SessionOutboundMessage[] = [];
+    const catalog = catalogWith({
+      resolveCloneTarget: vi.fn(() => ({
+        name: "billing",
+        displayName: "payments/core/billing",
+        cloneUrl,
+      })),
+    });
+    const projectAllocation = vi.fn(async (input) =>
+      createPersistedProjectRecord({
+        projectId: "prj_cloned",
+        rootPath: input.rootPath,
+        kind: input.kind,
+        displayName: input.displayName,
+        createdAt: input.timestamp,
+        updatedAt: input.timestamp,
+      }),
+    );
+    const session = createSessionForTest({
+      messages,
+      projectRegistry: { getOrCreateActiveByRoot: projectAllocation },
+      workspaceGitService: {
+        getForgeRepositoryCatalog: vi.fn(() => catalog),
+        getCheckout: vi.fn(async (cwd: string) => ({
+          cwd,
+          isGit: false as const,
+          currentBranch: null,
+          remoteUrl: null,
+          worktreeRoot: null,
+          isPaseoOwnedWorktree: false as const,
+          mainRepoRoot: null,
+        })),
+      },
+    });
+
+    try {
+      // The staging directory is created for real; the mocked clone leaves it empty,
+      // and the handler renames it into place.
+      await session.handleMessage({
+        type: "project.forge.clone.request",
+        repo: "payments/core/billing",
+        cloneProtocol: "ssh",
+        targetDirectory: target,
+        requestId: "req-forge-clone",
+      });
+
+      expect(catalog.resolveCloneTarget).toHaveBeenCalledWith({
+        repo: "payments/core/billing",
+        cloneProtocol: "ssh",
+      });
+      expect(gitCommandMocks.runGitCommand).toHaveBeenCalledWith(
+        ["clone", cloneUrl, expect.stringContaining(`${target}/.paseo-clone-`)],
+        expect.objectContaining({ cwd: target }),
+      );
+      expect(existsSync(join(target, "billing"))).toBe(true);
+      expect(messages).toMatchObject([
+        {
+          type: "project.forge.clone.response",
+          payload: {
+            requestId: "req-forge-clone",
+            repo: "payments/core/billing",
+            checkoutPath: join(target, "billing"),
+            project: { projectId: "prj_cloned" },
+            error: null,
+          },
+        },
+      ]);
+    } finally {
+      gitCommandMocks.runGitCommand.mockReset();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("reports a clone error when the host has no forge or rejects the repository", async () => {
+    const messages: SessionOutboundMessage[] = [];
+    const rejecting = catalogWith({
+      resolveCloneTarget: vi.fn(() => {
+        throw new Error("Only repositories on git.corp.example can be cloned");
+      }),
+    });
+    const withoutForge = createSessionForTest({
+      messages,
+      workspaceGitService: { getForgeRepositoryCatalog: vi.fn(() => null) },
+    });
+    const withForge = createSessionForTest({
+      messages,
+      workspaceGitService: { getForgeRepositoryCatalog: vi.fn(() => rejecting) },
+    });
+
+    await withoutForge.handleMessage({
+      type: "project.forge.clone.request",
+      repo: "a/b",
+      targetDirectory: "/tmp/never",
+      requestId: "req-none",
+    });
+    await withForge.handleMessage({
+      type: "project.forge.clone.request",
+      repo: "https://github.com/a/b.git",
+      targetDirectory: "/tmp/never",
+      requestId: "req-rejected",
+    });
+
+    expect(messages).toEqual([
+      {
+        type: "project.forge.clone.response",
+        payload: {
+          requestId: "req-none",
+          repo: "a/b",
+          checkoutPath: null,
+          project: null,
+          error: "No forge is configured on this host",
+        },
+      },
+      {
+        type: "project.forge.clone.response",
+        payload: {
+          requestId: "req-rejected",
+          repo: "https://github.com/a/b.git",
+          checkoutPath: null,
+          project: null,
+          error: "Only repositories on git.corp.example can be cloned",
+        },
+      },
+    ]);
   });
 });
 

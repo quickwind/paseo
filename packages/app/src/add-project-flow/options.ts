@@ -4,6 +4,7 @@ import {
   parseGitRemoteLocation,
 } from "@getpaseo/protocol/git-remote";
 import { shortenPath } from "@/utils/shorten-path";
+import { getCloneSourceCopy } from "./clone-source";
 import type { AddProjectHost, GithubRepositoryChoice } from "./model";
 
 export type AddProjectMethodId = "directory-search" | "browse" | "github" | "new-directory";
@@ -48,10 +49,14 @@ export function buildAddProjectMethods(host: AddProjectHost): AddProjectMethodOp
       description: "Choose or create a directory in Finder",
     });
   }
+  const cloneSource = getCloneSourceCopy();
   options.push({
     id: "github",
-    label: "Clone from GitHub",
-    description: githubMethodDescription(host),
+    label: cloneSource.methodLabel,
+    description: cloneSource.methodDescription({
+      canClone: host.canCloneGithubRepositories,
+      canSearch: host.canSearchGithubRepositories,
+    }),
     disabled: !host.canCloneGithubRepositories,
   });
   options.push({
@@ -71,20 +76,55 @@ export function addProjectMethodEmptyText(host: AddProjectHost | null): string {
     : "No matching options";
 }
 
-function githubMethodDescription(host: AddProjectHost): string {
-  if (!host.canCloneGithubRepositories) {
-    return "Update this host to clone GitHub repositories";
-  }
-  if (host.canSearchGithubRepositories) {
-    return "Search projects available to your GitHub account";
-  }
-  return "Enter a GitHub URL or owner/repo";
-}
-
 export function pathBaseName(path: string): string {
   const trimmed = path.replace(/[\\/]+$/, "");
   const parts = trimmed.split(/[\\/]/);
   return parts[parts.length - 1] ?? trimmed;
+}
+
+/**
+ * Rows for what the user typed, before any search result. Internal edition: the
+ * forge accepts `group/sub/project` or a remote URL and the host picks the clone
+ * protocol, so there is one row per input rather than one per protocol.
+ */
+export function buildManualRepositoryChoices(query: string): GithubRepositoryChoice[] {
+  return getCloneSourceCopy().isForge
+    ? buildManualForgeRepositoryChoices(query)
+    : buildManualGithubRepositoryChoices(query);
+}
+
+export function buildManualForgeRepositoryChoices(query: string): GithubRepositoryChoice[] {
+  const repo = query.trim();
+  if (!repo) return [];
+  const copy = getCloneSourceCopy();
+
+  if (isCompleteGitRemote(repo)) {
+    const location = parseGitRemoteLocation(repo);
+    return [
+      {
+        id: `manual:${repo}`,
+        nameWithOwner: location?.path ?? repo,
+        cloneUrl: repo,
+        description: copy.manualUrl,
+        updatedAt: null,
+      },
+    ];
+  }
+
+  const projectPath = repo.replace(/\.git$/u, "");
+  const segments = projectPath.split("/");
+  if (segments.length < 2 || segments.some((segment) => !/^[^\s/]+$/u.test(segment))) {
+    return [];
+  }
+  return [
+    {
+      id: `manual:${projectPath}`,
+      nameWithOwner: projectPath,
+      cloneUrl: projectPath,
+      description: copy.manualPath,
+      updatedAt: null,
+    },
+  ];
 }
 
 export function buildManualGithubRepositoryChoices(query: string): GithubRepositoryChoice[] {

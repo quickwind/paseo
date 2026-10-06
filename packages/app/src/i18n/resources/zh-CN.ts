@@ -1455,6 +1455,21 @@ export const zhCN: TranslationResources = {
       loadFailed: "无法加载 daemon 日志：{{message}}",
     },
   },
+  addProjectFlow: {
+    forgeClone: {
+      method: "从 GitLab 克隆",
+      methodDescriptionSearch: "搜索你的 GitLab 账号可访问的项目",
+      methodDescriptionManual: "输入 GitLab 项目路径或 URL",
+      methodDescriptionUpdate: "请先更新此主机以克隆 GitLab 项目",
+      pageTitle: "从 GitLab 克隆",
+      searchPlaceholder: "搜索或输入 GitLab 项目...",
+      emptyHint: "输入 GitLab 项目路径或 URL",
+      searchFailed: "无法搜索 GitLab 项目",
+      searchUnavailable: "GitLab 搜索不可用",
+      manualUrl: "克隆此项目 URL",
+      manualPath: "克隆此 GitLab 项目",
+    },
+  },
   openProject: {
     tiles: {
       addProject: {

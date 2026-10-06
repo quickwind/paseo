@@ -3,6 +3,7 @@ import { useCallback } from "react";
 import { useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-runtime";
 import { useSessionStore } from "@/stores/session-store";
 import {
+  cloneForgeProjectDirectly,
   cloneGithubProjectDirectly,
   openProjectDirectly,
   type OpenProjectResult,
@@ -80,6 +81,45 @@ export function useCloneGithubProject(
   return useCallback(
     async (repo: string, targetDirectory: string, cloneProtocol?: ProjectGithubCloneProtocol) => {
       return cloneGithubProjectDirectly({
+        serverId: normalizedServerId,
+        repo,
+        targetDirectory,
+        ...(cloneProtocol ? { cloneProtocol } : {}),
+        isConnected,
+        client,
+        upsertProject,
+        setHasHydratedWorkspaces,
+      });
+    },
+    [client, isConnected, normalizedServerId, setHasHydratedWorkspaces, upsertProject],
+  );
+}
+
+/** Internal edition: clone from the host's configured forge (GitLab). */
+export function useCloneForgeProject(
+  serverId: string | null,
+): (
+  repo: string,
+  targetDirectory: string,
+  cloneProtocol?: ProjectGithubCloneProtocol,
+) => Promise<OpenProjectResult> {
+  const normalizedServerId = serverId?.trim() ?? "";
+  const client = useHostRuntimeClient(normalizedServerId);
+  const isConnected = useHostRuntimeIsConnected(normalizedServerId);
+  const upsertProject = useCallback(
+    (
+      targetServerId: string,
+      project: Parameters<ReturnType<typeof getHostRuntimeStore>["acceptProjectSnapshot"]>[1],
+    ) => {
+      getHostRuntimeStore().acceptProjectSnapshot(targetServerId, project);
+    },
+    [],
+  );
+  const setHasHydratedWorkspaces = useSessionStore((state) => state.setHasHydratedWorkspaces);
+
+  return useCallback(
+    async (repo: string, targetDirectory: string, cloneProtocol?: ProjectGithubCloneProtocol) => {
+      return cloneForgeProjectDirectly({
         serverId: normalizedServerId,
         repo,
         targetDirectory,
