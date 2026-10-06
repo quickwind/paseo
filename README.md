@@ -11,6 +11,78 @@
   <a href="README.ko.md">한국어</a>
 </p>
 
+> [!IMPORTANT]
+> **This is Wukong, the company's internal edition of Paseo.** It runs only on company machines: no device pairing, no cloud traffic from Wukong itself, Claude Code and Devin CLI only, and the company GitLab as the only git forge. See [docs/internal-edition.md](docs/internal-edition.md) for every restriction and for Devin and GitLab setup.
+>
+> Install Wukong only from tarballs you build from this repository, as described below. Do not run `npm install -g @getpaseo/cli` or use the downloads in the upstream sections further down: those install upstream Paseo without any of these restrictions.
+
+## Wukong: build and install with npm
+
+Wukong ships as seven npm tarballs that you build from this repository and install together. The web UI is bundled into the server tarball, so there is no desktop or mobile app to install: you open the daemon's web UI in a browser.
+
+### Build the tarballs
+
+You need git, Node.js 22 (tested), and npm. The build machine needs access to the npm registry or your company mirror to download dependencies.
+
+```bash
+git clone https://github.com/quickwind/wukong.git
+cd wukong
+git checkout internal-edition
+
+# Do not add --ignore-scripts: postinstall applies the patches in patches/,
+# and the web UI is built from the patched libraries.
+npm ci
+
+mkdir -p dist-npm
+for p in highlight relay protocol client plugin server cli; do
+  npm pack --workspace=@getpaseo/$p --pack-destination dist-npm
+done
+```
+
+Packing builds every package, including the web UI, and takes several minutes. `dist-npm/` then holds seven `getpaseo-*.tgz` files; the server tarball is about 15 MB. Copy that directory to wherever your team installs from.
+
+### Install
+
+Install all seven tarballs in one command:
+
+```bash
+npm install -g ./dist-npm/*.tgz
+```
+
+The packages depend on each other by exact version under the `@getpaseo` scope. Installed together, each dependency resolves to the tarball beside it. Install only the CLI tarball and npm fetches the upstream `@getpaseo/server` and `@getpaseo/protocol` from the public registry, which silently drops every Wukong restriction.
+
+Check the install:
+
+```bash
+wukong --help | head -3                                          # "Wukong CLI - ..."
+ls "$(npm root -g)/@getpaseo/protocol/dist/internal-edition.js"  # present only in Wukong builds
+```
+
+`wukong` and `paseo` are the same command.
+
+### Configure and start
+
+1. Turn on the web UI in `~/.paseo/config.json`:
+
+   ```json
+   { "version": 1, "features": { "webUi": { "enabled": true } } }
+   ```
+
+2. Set up Claude Code, Devin CLI, and GitLab as described in [docs/internal-edition.md](docs/internal-edition.md). GitLab needs `uv tool install python-gitlab` and a `forge.gitlab` block in the same config file.
+3. Start the daemon and open the web UI:
+
+   ```bash
+   wukong daemon start
+   ```
+
+   Then browse to <http://127.0.0.1:6767>. The daemon listens on loopback only and refuses any other address.
+
+### Upgrade
+
+Pull the branch, rebuild the tarballs, run the same `npm install -g` command, then `wukong daemon restart`. A restart interrupts agents that are running, so pick a quiet moment.
+
+The sections below describe upstream Paseo.
+
 <p align="center">
   <a href="https://github.com/getpaseo/paseo/stargazers">
     <img src="https://img.shields.io/github/stars/getpaseo/paseo?style=flat&logo=github" alt="GitHub stars">

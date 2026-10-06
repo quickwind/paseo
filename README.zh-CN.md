@@ -11,6 +11,78 @@
   <a href="README.ko.md">한국어</a>
 </p>
 
+> [!IMPORTANT]
+> **这是 Wukong，公司内部版的 Paseo。** 它只在公司电脑上运行：没有设备配对，Wukong 自身不向任何云服务发送数据，只支持 Claude Code 和 Devin CLI，代码托管平台只认公司内部 GitLab。全部限制以及 Devin、GitLab 的配置方法见 [docs/internal-edition.md](docs/internal-edition.md)。
+>
+> 只能用从本仓库构建的安装包安装 Wukong，步骤见下文。不要运行 `npm install -g @getpaseo/cli`，也不要使用下方上游章节里的下载链接：那些装上的是没有任何限制的上游 Paseo。
+
+## Wukong：用 npm 构建和安装
+
+Wukong 以 7 个 npm 安装包（tarball）的形式发布，需要从本仓库构建，然后一起安装。Web UI 已经打包在 server 安装包里，所以不需要安装桌面端或手机端，用浏览器打开 daemon 提供的 Web UI 即可。
+
+### 构建安装包
+
+需要 git、Node.js 22（已测试）和 npm。构建机器需要能访问 npm 仓库或公司镜像来下载依赖。
+
+```bash
+git clone https://github.com/quickwind/wukong.git
+cd wukong
+git checkout internal-edition
+
+# 不要加 --ignore-scripts：postinstall 会应用 patches/ 里的补丁，
+# Web UI 要用打过补丁的库来构建。
+npm ci
+
+mkdir -p dist-npm
+for p in highlight relay protocol client plugin server cli; do
+  npm pack --workspace=@getpaseo/$p --pack-destination dist-npm
+done
+```
+
+打包会构建所有包（包括 Web UI），需要几分钟。完成后 `dist-npm/` 里有 7 个 `getpaseo-*.tgz` 文件，其中 server 包约 15 MB。把这个目录复制到团队安装用的位置即可。
+
+### 安装
+
+用一条命令一起安装这 7 个包：
+
+```bash
+npm install -g ./dist-npm/*.tgz
+```
+
+这些包之间按 `@getpaseo` scope 下的精确版本号互相依赖。一起安装时，每个依赖都会解析到同一批安装包里的对应文件。如果只装 CLI 包，npm 会从公共仓库下载上游的 `@getpaseo/server` 和 `@getpaseo/protocol`，Wukong 的所有限制都会悄无声息地失效。
+
+检查安装结果：
+
+```bash
+wukong --help | head -3                                          # 应显示 "Wukong CLI - ..."
+ls "$(npm root -g)/@getpaseo/protocol/dist/internal-edition.js"  # 只有 Wukong 构建才有这个文件
+```
+
+`wukong` 和 `paseo` 是同一个命令。
+
+### 配置和启动
+
+1. 在 `~/.paseo/config.json` 里开启 Web UI：
+
+   ```json
+   { "version": 1, "features": { "webUi": { "enabled": true } } }
+   ```
+
+2. 按 [docs/internal-edition.md](docs/internal-edition.md) 配置 Claude Code、Devin CLI 和 GitLab。GitLab 需要先执行 `uv tool install python-gitlab`，并在同一个配置文件里加上 `forge.gitlab` 配置。
+3. 启动 daemon，打开 Web UI：
+
+   ```bash
+   wukong daemon start
+   ```
+
+   然后用浏览器访问 <http://127.0.0.1:6767>。daemon 只监听本机回环地址，配置成其他地址会拒绝启动。
+
+### 升级
+
+拉取最新分支，重新构建安装包，执行同样的 `npm install -g` 命令，再运行 `wukong daemon restart`。重启会中断正在运行的 agent，请选在空闲时进行。
+
+以下内容描述的是上游 Paseo。
+
 <p align="center">
   <a href="https://github.com/getpaseo/paseo/stargazers">
     <img src="https://img.shields.io/github/stars/getpaseo/paseo?style=flat&logo=github" alt="GitHub stars">

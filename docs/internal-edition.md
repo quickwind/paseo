@@ -2,6 +2,8 @@
 
 This fork, branded Wukong, runs only on company machines. It has no device pairing, Wukong itself sends nothing to cloud services, the only providers are Claude Code and Devin CLI, and the only git forge is the company's self-hosted GitLab.
 
+To build the npm tarballs and install them, see [Wukong: build and install with npm](../README.md#wukong-build-and-install-with-npm).
+
 ## Where the policy lives
 
 `packages/protocol/src/internal-edition.ts` holds every switch. The server, app, CLI, and desktop all read it, so this fork changes behavior in one place instead of patching each feature. Each site that enforces the policy has a comment starting with `Internal edition:`. Run `rg "INTERNAL_EDITION|Internal edition:"` to find them all when you merge upstream.
