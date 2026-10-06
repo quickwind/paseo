@@ -54,6 +54,15 @@ describe("disabled GitHub service (internal edition)", () => {
     expect(isDisabledForgeService(null)).toBe(false);
   });
 
+  it("reports optional synchronous members as absent", () => {
+    const service = createDisabledGitHubService();
+
+    expect(service.supportsCrossRepoCheckoutWithoutRefs).toBeUndefined();
+    expect(service.defaultCheckoutRefs).toBeUndefined();
+    expect(service.buildPrLocalBranchName).toBeUndefined();
+    expect("defaultCheckoutRefs" in service).toBe(false);
+  });
+
   it("is not mistaken for a thenable when awaited", async () => {
     await expect(Promise.resolve(createDisabledGitHubService())).resolves.toBeDefined();
   });

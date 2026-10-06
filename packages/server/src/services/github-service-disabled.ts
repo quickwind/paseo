@@ -11,6 +11,15 @@ const DISABLED_FORGE_SERVICE = Symbol("paseo.disabledForgeService");
 
 const NO_OP_METHODS = new Set<string | symbol>(["invalidate", "dispose"]);
 
+// Optional synchronous members: they must read as absent, not as a rejecting function,
+// or `supportsCrossRepoCheckoutWithoutRefs` reads truthy and the optional hooks return
+// a promise where callers expect a value.
+const ABSENT_MEMBERS = new Set<string | symbol>([
+  "supportsCrossRepoCheckoutWithoutRefs",
+  "defaultCheckoutRefs",
+  "buildPrLocalBranchName",
+]);
+
 function reject(): Promise<never> {
   return Promise.reject(new CloudServiceDisabledError("GitHub"));
 }
@@ -28,13 +37,21 @@ export function createDisabledGitHubService(): GitHubService {
   return new Proxy(methods, {
     // Wrappers that probe with `in` (test stubs, spread helpers) must see every method.
     has(target, property) {
+      if (ABSENT_MEMBERS.has(property)) {
+        return false;
+      }
       return typeof property === "string" ? property !== "then" : property in target;
     },
     get(target, property) {
       if (property in target) {
         return target[property];
       }
-      if (typeof property === "symbol" || NO_OP_METHODS.has(property) || property === "then") {
+      if (
+        typeof property === "symbol" ||
+        NO_OP_METHODS.has(property) ||
+        ABSENT_MEMBERS.has(property) ||
+        property === "then"
+      ) {
         return undefined;
       }
       return reject;
