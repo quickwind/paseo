@@ -277,7 +277,8 @@ describe("deriveMergeCapability (gitlab)", () => {
 
   it("offers GitLab merge methods and never reports a merge queue", () => {
     const cap = deriveMergeCapability(gitlabFacts());
-    expect(cap?.allowedMethods).toEqual(["merge", "squash", "rebase"]);
+    // Internal edition: GitLab has no rebase merge.
+    expect(cap?.allowedMethods).toEqual(["merge", "squash"]);
     expect(cap?.mergeBlockedByQueue).toBe(false);
     expect(cap?.canEnableAutoMerge).toBe(false);
   });

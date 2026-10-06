@@ -840,6 +840,41 @@ describe("git-actions-policy", () => {
     ]);
   });
 
+  it("never offers a rebase merge or rebase auto-merge for GitLab", () => {
+    const gitlabFacts = {
+      forge: "gitlab",
+      detailedMergeStatus: "mergeable",
+      hasConflicts: false,
+      blockingDiscussionsResolved: true,
+      approvalsRequired: 0,
+      approvalsGiven: 0,
+      pipelineStatus: "running",
+      pipelineId: 7,
+      pipelineUrl: null,
+      mergeWhenPipelineSucceeds: false,
+    };
+    const actions = buildGitActions(
+      createInput({
+        forgeBrandLabel: "GitLab",
+        forgeChangeRequestNoun: "MR",
+        hasRemote: true,
+        isOnBaseBranch: false,
+        aheadCount: 2,
+        hasPullRequest: true,
+        pullRequestUrl: "https://gitlab.example.com/group/project/-/merge_requests/3",
+        pullRequestState: "open",
+        pullRequestMergeable: "MERGEABLE",
+        pullRequestGithub: gitlabFacts,
+      }),
+    );
+
+    const ids = [actions.primary, ...actions.secondary].map((action) => action?.id);
+    expect(ids).toEqual(expect.arrayContaining(["merge-pr-squash", "merge-pr-merge"]));
+    expect(ids).toEqual(expect.arrayContaining(["enable-pr-auto-merge-squash"]));
+    expect(ids).not.toContain("merge-pr-rebase");
+    expect(ids).not.toContain("enable-pr-auto-merge-rebase");
+  });
+
   it("requires GitHub's direct-merge allowlist before promoting PR merge", () => {
     const actions = buildGitActions(
       createInput({

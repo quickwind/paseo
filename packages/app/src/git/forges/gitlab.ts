@@ -95,7 +95,10 @@ export { GitlabMergeFactsSchema };
 
 const GITLAB_MERGEABLE_STATUS = "mergeable";
 const GITLAB_LEGACY_MERGEABLE_STATUS = "can_be_merged";
-const GITLAB_MERGE_METHODS: CheckoutPrMergeMethod[] = ["merge", "squash", "rebase"];
+// Internal edition: python-gitlab's `merge` action has no rebase option, so the
+// daemon rejects it (gitlab-service.ts) and the app never offers it. policy.ts
+// hides merge-pr-rebase and enable-pr-auto-merge-rebase from this list.
+const GITLAB_MERGE_METHODS: CheckoutPrMergeMethod[] = ["merge", "squash"];
 
 /**
  * Direct-merge readiness from GitLab's merge signals. `detailedMergeStatus` is
