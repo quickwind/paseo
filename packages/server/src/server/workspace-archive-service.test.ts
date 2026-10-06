@@ -140,7 +140,8 @@ function createArchiveDeps(input: ArchiveDepsInput): ArchiveTestDependencies {
     github: createGitHubServiceStub(),
     workspaceGitService: {
       getSnapshot: vi.fn(async () => null),
-    } as unknown as Pick<WorkspaceGitService, "getSnapshot">,
+      invalidateForge: vi.fn(),
+    } as unknown as Pick<WorkspaceGitService, "getSnapshot" | "invalidateForge">,
     agentManager: {
       listAgents: () => [],
       getAgent: () => null,

@@ -18,24 +18,24 @@ This fork runs only on company machines. It has no device pairing, Paseo itself 
 
 ## What is blocked
 
-| Traffic                                             | Where it is enforced                                                              |
-| --------------------------------------------------- | --------------------------------------------------------------------------------- |
-| Relay (`relay.paseo.sh`)                            | `packages/server/src/server/config.ts` forces `relayEnabled: false`, immutable    |
-| Paseo Hub (`hub.paseo.sh`)                          | `DisabledHubRelationshipRemote` in `hub/relationship-remote.ts`                   |
-| Expo push (`exp.host`)                              | `push/index.ts` drops deliveries                                                  |
-| OpenAI speech                                       | `speech-config-resolver.ts` forces every speech feature to `local`                |
-| Speech model downloads (GitHub)                     | `sherpa/model-downloader.ts` refuses to fetch                                     |
-| Plugin installs from npm, Git, registry             | `plugins/managed-source/edition.ts`; local directories and `file:` Git still work |
-| Built-in plugins (usage sources, Antigravity, Muse) | `plugins/builtin/index.ts` starts none                                            |
-| Public service URLs                                 | `config.ts` drops `serviceProxy.publicBaseUrl`                                    |
-| Desktop auto-update feed                            | `packages/desktop/src/features/auto-updater.ts` reports no update                 |
-| Changelog (`raw.githubusercontent.com`)             | `changelog-source.ts` skips the fetch; "What's new" entries are hidden            |
+| Traffic                                             | Where it is enforced                                                                                                                                                              |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Relay (`relay.paseo.sh`)                            | `packages/server/src/server/config.ts` forces `relayEnabled: false`, immutable                                                                                                    |
+| Paseo Hub (`hub.paseo.sh`)                          | `DisabledHubRelationshipRemote` in `hub/relationship-remote.ts`                                                                                                                   |
+| Expo push (`exp.host`)                              | `push/index.ts` drops deliveries                                                                                                                                                  |
+| OpenAI speech                                       | `speech-config-resolver.ts` forces every speech feature to `local`                                                                                                                |
+| Speech model downloads (GitHub)                     | `sherpa/model-downloader.ts` refuses to fetch                                                                                                                                     |
+| Plugin installs from npm, Git, registry             | `plugins/managed-source/edition.ts`; local directories and `file:` Git still work                                                                                                 |
+| Built-in plugins (usage sources, Antigravity, Muse) | `plugins/builtin/index.ts` starts none                                                                                                                                            |
+| Public service URLs                                 | `config.ts` drops `serviceProxy.publicBaseUrl`                                                                                                                                    |
+| Desktop auto-update feed                            | `packages/desktop/src/features/auto-updater.ts` reports no update                                                                                                                 |
+| GitHub (`gh`, `git` clone of any URL)               | `services/github-service-disabled.ts` replaces the shared GitHub service; `session.ts` refuses `project.github.clone`; `websocket-server.ts` advertises no GitHub clone or search |
+| Changelog (`raw.githubusercontent.com`)             | `changelog-source.ts` skips the fetch; "What's new" entries are hidden                                                                                                            |
 
 ## What is not blocked
 
 - The agents themselves. Claude Code talks to Anthropic (or the endpoint you set in `ANTHROPIC_BASE_URL`) and Devin CLI talks to Cognition. Route them through your company gateway with each CLI's own settings or with `agents.providers.<id>.env`.
 - `git` itself. It talks to whatever remote a repository has; only the forge features (pull request status, merge, search, clone shorthand) are limited to the configured GitLab.
-- The legacy `workspace.github.*` and `project.github.*` RPCs. They stay in the protocol and still work for a client that calls them. The app and CLI in this edition do not.
 - Links a person clicks, such as docs and issue links.
 - Direct connections and SSH remote hosts. They reach a daemon you name; a remote daemon is still bound to its own loopback.
 
@@ -72,7 +72,7 @@ Paseo reaches GitLab through the python-gitlab CLI (`gitlab`), because `glab` ca
    - `url` is required in the section even though Paseo passes its own URL.
    - Keep the token out of the file with `helper:`, which runs the command with no terminal. A plain `private_token = glpat-...` also works. `GITLAB_PRIVATE_TOKEN` in the daemon's environment works too.
    - `ssl_verify` takes `true`, `false`, or a CA bundle path. Use the path for a private CA.
-   - With a config file present and no `forge.gitlab.configSection`, python-gitlab reads `[global] default`. If that section points at another server, its token is sent to the company GitLab. Set `configSection` to avoid that.
+   - Set `forge.gitlab.configSection`, or make the `[global] default` section the company GitLab. Without `-g`, python-gitlab sends the default section's token to the configured URL.
 
 4. Check it: `gitlab current-user get` prints your user as JSON.
 5. Tell the daemon where GitLab is, in `$PASEO_HOME/config.json`:

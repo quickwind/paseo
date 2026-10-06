@@ -122,6 +122,8 @@ import { VoiceAssistantWebSocketServer } from "./websocket-server.js";
 import { WorkspaceSetupRuntime } from "./workspace-setup-runtime.js";
 import { createWorkspaceLabelService } from "./workspace-labels/index.js";
 import { createGitHubService } from "../services/github-service.js";
+import { createDisabledGitHubService } from "../services/github-service-disabled.js";
+import { isForgeAllowedByEdition } from "@getpaseo/protocol/internal-edition";
 import { createGatedForgeRegistry, type ForgeRegistry } from "../services/forge-registry.js";
 import {
   createGitLabRepositoryCatalog,
@@ -942,7 +944,10 @@ export async function createPaseoDaemon(
     paseoHome: config.paseoHome,
     workspaceRegistry,
   });
-  const github = createGitHubService();
+  // Internal edition: without an allowed github forge the shared service never runs gh.
+  const github = isForgeAllowedByEdition("github")
+    ? createGitHubService()
+    : createDisabledGitHubService();
   const workspaceGitService = new WorkspaceGitServiceImpl({
     logger,
     paseoHome: config.paseoHome,

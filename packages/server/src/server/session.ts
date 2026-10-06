@@ -231,6 +231,8 @@ import {
   GitHubCommandError,
   type GitHubService,
 } from "../services/github-service.js";
+import { CloudServiceDisabledError } from "@getpaseo/protocol/internal-edition";
+import { isDisabledForgeService } from "../services/github-service-disabled.js";
 import {
   ForgeAuthenticationError,
   ForgeCliMissingError,
@@ -7092,6 +7094,11 @@ export class Session {
     let normalizedRepo = request.repo;
     let checkoutPath: string | null = null;
     try {
+      // Internal edition: this RPC clones any remote URL, which would bypass the
+      // configured-GitLab-host rule, so it is refused before git runs.
+      if (isDisabledForgeService(this.github)) {
+        throw new CloudServiceDisabledError("GitHub clone");
+      }
       const repo = normalizeCloneRepository({
         repo: request.repo,
         cloneProtocol: request.cloneProtocol,

@@ -50,6 +50,7 @@ import {
   createProviderSnapshotManagerStub,
 } from "./test-utils/session-stubs.js";
 import { isPlatform } from "../test-utils/platform.js";
+import { createDisabledGitHubService } from "../services/github-service-disabled.js";
 import {
   GitHubAuthenticationError,
   GitHubCliMissingError,
@@ -1086,6 +1087,92 @@ describe("project command-center RPCs", () => {
 });
 
 // Internal edition: Add Project searches and clones through the forge catalog.
+// Internal edition: GitHub is disabled, so the legacy GitHub RPCs answer with
+// their error shapes and never run gh or git.
+describe("legacy GitHub RPCs with GitHub disabled", () => {
+  function disabledSession(messages: SessionOutboundMessage[]) {
+    return createSessionForTest({
+      messages,
+      github: createDisabledGitHubService() as unknown as ForgeService,
+      workspaceGitService: { resolveForge: vi.fn().mockResolvedValue(null) },
+    });
+  }
+
+  test("github_search_request answers with an error response", async () => {
+    const messages: SessionOutboundMessage[] = [];
+
+    await disabledSession(messages).handleMessage({
+      type: "github_search_request",
+      cwd: "/tmp/repo",
+      query: "search",
+      requestId: "req-gh-search",
+    });
+
+    expect(messages).toEqual([
+      {
+        type: "github_search_response",
+        payload: expect.objectContaining({
+          items: [],
+          featuresEnabled: false,
+          githubFeaturesEnabled: false,
+          requestId: "req-gh-search",
+          error: "GitHub is disabled in this internal edition of Paseo",
+        }),
+      },
+    ]);
+  });
+
+  test("workspace.github.search_repositories answers with an error status", async () => {
+    const messages: SessionOutboundMessage[] = [];
+
+    await disabledSession(messages).handleMessage({
+      type: "workspace.github.search_repositories.request",
+      query: "paseo",
+      requestId: "req-gh-repos",
+    });
+
+    expect(messages).toEqual([
+      {
+        type: "workspace.github.search_repositories.response",
+        payload: {
+          status: "error",
+          requestId: "req-gh-repos",
+          repositories: [],
+          available: true,
+          error: "GitHub is disabled in this internal edition of Paseo",
+        },
+      },
+    ]);
+  });
+
+  test("project.github.clone is refused and never runs git", async () => {
+    const messages: SessionOutboundMessage[] = [];
+    gitCommandMocks.runGitCommand.mockReset();
+
+    await disabledSession(messages).handleMessage({
+      type: "project.github.clone.request",
+      repo: "https://gitlab.com/other/anything.git",
+      targetDirectory: "/tmp/never-created",
+      requestId: "req-gh-clone",
+    });
+
+    expect(gitCommandMocks.runGitCommand).not.toHaveBeenCalled();
+    expect(existsSync("/tmp/never-created")).toBe(false);
+    expect(messages).toEqual([
+      {
+        type: "project.github.clone.response",
+        payload: {
+          requestId: "req-gh-clone",
+          repo: "https://gitlab.com/other/anything.git",
+          checkoutPath: null,
+          project: null,
+          error: "GitHub clone is disabled in this internal edition of Paseo",
+        },
+      },
+    ]);
+  });
+});
+
 describe("forge repository RPCs", () => {
   function catalogWith(overrides: Record<string, unknown> = {}) {
     return {

@@ -77,6 +77,7 @@ import {
   findLatestPermissionRequest,
 } from "@getpaseo/protocol/agent-attention-notification";
 import { createGitHubService } from "../services/github-service.js";
+import { isDisabledForgeService } from "../services/github-service-disabled.js";
 import type { ForgeService } from "../services/forge-service.js";
 import {
   extractHttpBearerToken,
@@ -1900,9 +1901,11 @@ export class VoiceAssistantWebSocketServer {
         // COMPAT(hubRelationship): added in v0.1.X, drop the gate when floor >= v0.1.X.
         hubRelationship: true,
         // COMPAT(projectGithubClone): added in v0.1.108, remove gate after 2027-01-15.
-        projectGithubClone: true,
+        // Internal edition: false when GitHub is disabled, so the app never offers it.
+        projectGithubClone: !isDisabledForgeService(this.github),
         // COMPAT(workspaceGithubRepositorySearch): added in v0.1.108, remove gate after 2027-01-15.
-        workspaceGithubRepositorySearch: true,
+        // Internal edition: see projectGithubClone.
+        workspaceGithubRepositorySearch: !isDisabledForgeService(this.github),
         // COMPAT(forgeRepositories): added in v0.11.0, remove gate after 2027-04-06.
         // Internal edition: advertised only when a forge is configured.
         forgeRepositories: this.workspaceGitService.getForgeRepositoryCatalog?.() != null,
