@@ -2,10 +2,13 @@
 // socket. Everything Wukong-specific that has to run at
 // daemon start lives here, which keeps upstream files to a one-line import.
 
-import { activateWukongPolicy } from "./policy.js";
+import { activateWukongPolicy, isWukongActive } from "./policy.js";
 import { allowEgressHost, installEgressGuard } from "./egress-guard.js";
 
 export function applyWukongEdition(): void {
+  if (isWukongActive()) {
+    return;
+  }
   // The relay is a cloud service. A launch-time override also locks it against config edits.
   process.env.PASEO_RELAY_ENABLED = "false";
 
@@ -23,3 +26,7 @@ export function applyWukongEdition(): void {
     },
   });
 }
+
+// daemon-worker imports this module first so the policy is in force before upstream modules
+// (the forge registry builds itself at import time) are evaluated.
+applyWukongEdition();

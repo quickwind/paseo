@@ -4,6 +4,7 @@ import { createGitHubService, probeGitHubHost } from "./github-service.js";
 import type { ForgeService } from "./forge-service.js";
 import { createGiteaService, resolveGiteaFamilyForge } from "./gitea-service.js";
 import { createGitLabService, probeGitLabHost } from "./gitlab-service.js";
+import { wukongForgeEntries } from "../wukong/gitlab/adapter.js"; // Wukong
 
 export type ForgeServiceFactory = () => ForgeService;
 
@@ -130,7 +131,7 @@ function matchesCloudHost(forgeId: string): ((host: string) => boolean) | undefi
   return (host) => normalized.has(normalizeHost(host));
 }
 
-export const defaultForgeRegistry = new ForgeRegistry([
+const upstreamForgeEntries: Array<readonly [string, ForgeAdapterRegistration]> = [
   // GitHub Enterprise Server is recognized at runtime by probeHost, exactly like
   // self-hosted GitLab/Gitea: github.com short-circuits via matchHost, so the
   // probe only runs on non-cloud hosts. The PR-status poll gates on the resolver
@@ -167,7 +168,8 @@ export const defaultForgeRegistry = new ForgeRegistry([
     },
   ],
   ["codeberg", { createService: createGiteaService, matchesHost: matchesCloudHost("codeberg") }],
-]);
+];
+export const defaultForgeRegistry = new ForgeRegistry(wukongForgeEntries(upstreamForgeEntries)); // Wukong
 
 export function createForgeService(forge: string): ForgeService | null {
   return defaultForgeRegistry.create(forge);
