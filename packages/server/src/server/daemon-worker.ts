@@ -6,7 +6,9 @@ import { resolvePaseoHome } from "./paseo-home.js";
 import { createRootLogger } from "./logger.js";
 import type { DaemonLifecycleIntent } from "./bootstrap.js";
 import { getProcessDiagnostics } from "./process-diagnostics.js";
+import { applyWukongEdition } from "../wukong/edition.js";
 
+applyWukongEdition(); // Wukong: network policy, before any config or socket
 process.title = "Paseo Daemon";
 
 type SupervisorLifecycleMessage =
