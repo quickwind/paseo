@@ -2,21 +2,21 @@ import pino from "pino";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { buildProviderRegistry } from "../server/agent/provider-registry.js";
-import { activateWukongProviders } from "./providers.js";
+import { activateWukongPolicy } from "./policy.js";
 
 const logger = pino({ level: "silent" });
 
 describe("Wukong providers", () => {
   let deactivate: () => void;
   beforeEach(() => {
-    deactivate = activateWukongProviders();
+    deactivate = activateWukongPolicy();
   });
   afterEach(() => deactivate());
 
   it("leaves the upstream registry alone until activated", () => {
     deactivate();
     expect(Object.keys(buildProviderRegistry(logger))).toContain("codex");
-    deactivate = activateWukongProviders();
+    deactivate = activateWukongPolicy();
   });
 
   it("exposes only Claude Code and Devin CLI", () => {

@@ -2,7 +2,7 @@
 // socket. Everything Wukong-specific that has to run at
 // daemon start lives here, which keeps upstream files to a one-line import.
 
-import { activateWukongProviders } from "./providers.js";
+import { activateWukongPolicy } from "./policy.js";
 import { allowEgressHost, installEgressGuard } from "./egress-guard.js";
 
 export function applyWukongEdition(): void {
@@ -15,7 +15,7 @@ export function applyWukongEdition(): void {
     }
   }
 
-  activateWukongProviders();
+  activateWukongPolicy();
 
   installEgressGuard({
     onBlocked: (error) => {

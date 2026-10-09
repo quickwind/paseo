@@ -1,18 +1,8 @@
 // Wukong edition: Claude Code and Devin CLI are the only agent providers. Devin ships as a
 // configured ACP provider, not a built-in, so upstream's provider code stays untouched.
 
+import { isWukongActive } from "./policy.js";
 import type { ProviderOverride } from "../server/agent/provider-launch-config.js";
-
-// Off until the daemon starts (see edition.ts), so upstream tests keep seeing every provider.
-let active = false;
-
-/** Turns the provider policy on; returns a function that turns it off again. */
-export function activateWukongProviders(): () => void {
-  active = true;
-  return () => {
-    active = false;
-  };
-}
 
 export const WUKONG_PROVIDER_IDS: readonly string[] = ["claude", "devin"];
 
@@ -29,7 +19,7 @@ const DEFAULT_OVERRIDES: Record<string, ProviderOverride> = {
 export function withWukongProviderOverrides(
   overrides: Record<string, ProviderOverride>,
 ): Record<string, ProviderOverride> {
-  if (!active) {
+  if (!isWukongActive()) {
     return overrides;
   }
   const merged = { ...overrides };
@@ -44,7 +34,7 @@ export function restrictToWukongProviders<T extends Record<string, unknown>>(
   registry: T,
   options: { isDev: boolean; devProviderIds: ReadonlySet<string> },
 ): T {
-  if (!active) {
+  if (!isWukongActive()) {
     return registry;
   }
   return Object.fromEntries(

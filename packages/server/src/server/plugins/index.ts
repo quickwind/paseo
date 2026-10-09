@@ -25,6 +25,7 @@ import { expandTilde } from "../../utils/path.js";
 import { runPluginBuild } from "./preparation.js";
 import { PluginRuntime } from "./runtime.js";
 import { BuiltinPluginLoader, type BuiltinPlugin } from "./builtin/index.js";
+import { wukongBuiltinPlugins, wukongManagedSources } from "../../wukong/plugins.js"; // Wukong
 import type { PluginProviderMetadata } from "./plugin-process-protocol.js";
 import { readPluginProviderIcon } from "./provider-icon.js";
 import {
@@ -116,8 +117,9 @@ export class PluginService {
           for (const listener of this.settingsListeners) listener(pluginId, settingsId);
         },
       });
-    this.managedSources = dependencies.managedSources ?? null;
-    this.builtinPlugins = dependencies.builtinPlugins ?? new BuiltinPluginLoader(undefined, []);
+    this.managedSources = wukongManagedSources(dependencies.managedSources) ?? null; // Wukong
+    this.builtinPlugins =
+      wukongBuiltinPlugins(dependencies.builtinPlugins) ?? new BuiltinPluginLoader(undefined, []); // Wukong
     this.builtinPluginIds = this.builtinPlugins.ids;
     this.runtime.subscribe((pluginId, error) => {
       this.removeProviderRegistrations(pluginId);
