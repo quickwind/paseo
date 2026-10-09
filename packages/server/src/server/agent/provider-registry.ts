@@ -49,6 +49,7 @@ import { TraeACPAgentClient } from "./providers/trae-acp-agent.js";
 import { MockLoadTestAgentClient } from "./providers/mock-load-test-agent.js";
 import { MockSlowProviderClient } from "./providers/mock-slow-provider.js";
 import { ToolPolicyUnsupportedError, mergeProviderOptions } from "./provider-options.js";
+import { restrictToWukongProviders, withWukongProviderOverrides } from "../../wukong/providers.js"; // Wukong
 import {
   AGENT_PROVIDER_DEFINITIONS,
   BUILTIN_PROVIDER_IDS,
@@ -908,7 +909,7 @@ export function buildProviderRegistry(
   options?: BuildProviderRegistryOptions,
 ): Record<AgentProvider, ProviderDefinition> {
   const runtimeSettings = options?.runtimeSettings;
-  const providerOverrides = options?.providerOverrides ?? {};
+  const providerOverrides = withWukongProviderOverrides(options?.providerOverrides ?? {}); // Wukong
   const resolvedProviders = buildResolvedBuiltinProviders(
     providerOverrides,
     runtimeSettings,
@@ -947,13 +948,20 @@ export function buildProviderRegistry(
     openCodeBridge: options?.openCodeBridge,
   });
 
-  return Object.fromEntries(
-    [...resolvedProviders.entries()].map(([provider, resolved]) => [
-      provider,
-      createRegistryEntry(logger, provider, resolved),
-    ]),
-  ) as Record<AgentProvider, ProviderDefinition>;
+  return restrictToWukongProviders(
+    Object.fromEntries(
+      [...resolvedProviders.entries()].map(([provider, resolved]) => [
+        provider,
+        createRegistryEntry(logger, provider, resolved),
+      ]),
+    ) as Record<AgentProvider, ProviderDefinition>,
+    { isDev: options?.isDev === true, devProviderIds: DEV_PROVIDER_IDS }, // Wukong
+  );
 }
+
+const DEV_PROVIDER_IDS: ReadonlySet<string> = new Set(
+  DEV_AGENT_PROVIDER_DEFINITIONS.map((definition) => definition.id),
+);
 
 export function getProviderIds(
   registry: Record<AgentProvider, ProviderDefinition>,
