@@ -163,6 +163,48 @@ export function reportFromStatus(body: unknown): UsageReport {
   };
 }
 
+/** Node's fetch only says "fetch failed"; the reason (certificate, DNS, refused) is in `cause`. */
+function describeNetworkError(host: string, error: unknown): Error {
+  const cause = (error as { cause?: { code?: string; message?: string } }).cause;
+  const reason = cause?.code ?? cause?.message ?? (error as Error).message;
+  const hint =
+    cause?.code && /CERT|SELF_SIGNED|ISSUER|VERIFY|SIGNATURE/.test(cause.code)
+      ? " (a proxy or firewall may be re-signing HTTPS; set NODE_EXTRA_CA_CERTS to your company CA file)"
+      : "";
+  return new Error(`Could not reach ${host}: ${reason}${hint}`);
+}
+
+async function requestStatus(
+  fetchApi: typeof fetch,
+  url: URL,
+  apiKey: string,
+  version: string,
+): Promise<Response> {
+  try {
+    return await fetchApi(`${url.origin}${STATUS_PATH}`, {
+      method: "POST",
+      redirect: "error",
+      signal: AbortSignal.timeout(15_000),
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        "Connect-Protocol-Version": "1",
+      },
+      body: JSON.stringify({
+        metadata: {
+          apiKey,
+          ideName: "devin",
+          ideVersion: version,
+          extensionVersion: version,
+          locale: "en",
+        },
+      }),
+    });
+  } catch (error) {
+    throw describeNetworkError(url.hostname, error);
+  }
+}
+
 export async function fetchUsage(_input: UsageInput, deps: UsageDeps = {}): Promise<UsageReport> {
   const login = await (deps.readLogin ?? readDevinLogin)();
   if (!login) throw new Error("Devin CLI is not signed in; run `devin auth login`");
@@ -173,25 +215,7 @@ export async function fetchUsage(_input: UsageInput, deps: UsageDeps = {}): Prom
     );
   }
   const version = await (deps.cliVersion ?? devinCliVersion)();
-  const response = await (deps.fetchApi ?? fetch)(`${url.origin}${STATUS_PATH}`, {
-    method: "POST",
-    redirect: "error",
-    signal: AbortSignal.timeout(15_000),
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-      "Connect-Protocol-Version": "1",
-    },
-    body: JSON.stringify({
-      metadata: {
-        apiKey: login.apiKey,
-        ideName: "devin",
-        ideVersion: version,
-        extensionVersion: version,
-        locale: "en",
-      },
-    }),
-  });
+  const response = await requestStatus(deps.fetchApi ?? fetch, url, login.apiKey, version);
   if (response.status === 401 || response.status === 403) {
     return unavailable({ kind: "rejected", status: response.status });
   }

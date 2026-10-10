@@ -174,6 +174,23 @@ describe("fetchUsage", () => {
     expect((error as Error).message).toBe("Devin usage API returned 500");
   });
 
+  it("names the real reason when the connection fails, never the key", async () => {
+    const failing = (cause: object) =>
+      vi.fn(async () => {
+        throw Object.assign(new TypeError("fetch failed"), { cause });
+      }) as unknown as typeof fetch;
+    const refused = await fetchUsage(input, deps(failing({ code: "ECONNREFUSED" }))).catch(
+      (e: Error) => e,
+    );
+    expect((refused as Error).message).toBe("Could not reach server.codeium.com: ECONNREFUSED");
+    const cert = await fetchUsage(
+      input,
+      deps(failing({ code: "UNABLE_TO_VERIFY_LEAF_SIGNATURE" })),
+    ).catch((e: Error) => e);
+    expect((cert as Error).message).toMatch(/UNABLE_TO_VERIFY_LEAF_SIGNATURE.*NODE_EXTRA_CA_CERTS/);
+    expect((cert as Error).message).not.toContain("SECRET-KEY");
+  });
+
   it("asks the user to sign in when there is no login", async () => {
     await expect(
       fetchUsage(
