@@ -1,5 +1,5 @@
 import type { PluginScreenProps } from "@getpaseo/plugin/client";
-import { useRpc } from "@getpaseo/plugin/client";
+import { usePaseo, useRpc } from "@getpaseo/plugin/client";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from "react-native";
@@ -91,7 +91,9 @@ export function AddFromGitLabScreen({ theme, layout }: PluginScreenProps) {
   const clone = useRpc(cloneProjectRpc);
   const [query, setQuery] = useState("");
   const [folder, setFolder] = useState("");
+  const [localFolder, setLocalFolder] = useState("");
   const debouncedQuery = useDebounced(query);
+  const paseo = usePaseo();
 
   const results = useQuery({
     queryKey: ["wukong-gitlab", "search", debouncedQuery],
@@ -103,6 +105,14 @@ export function AddFromGitLabScreen({ theme, layout }: PluginScreenProps) {
     mutationFn: (project: GitLabProject) =>
       clone({ path: project.path, parentDirectory: folder.trim() || undefined }),
   });
+
+  const openLocal = useMutation({
+    mutationFn: async (directory: string) => (await paseo.workspaces.open(directory)).directory,
+  });
+  const openLocalFolder = useCallback(() => {
+    const directory = localFolder.trim();
+    if (directory) openLocal.mutate(directory);
+  }, [localFolder, openLocal]);
 
   const styles = useMemo(() => createStyles(theme, layout.compact), [theme, layout.compact]);
 
@@ -130,6 +140,30 @@ export function AddFromGitLabScreen({ theme, layout }: PluginScreenProps) {
         autoCorrect={false}
         accessibilityLabel="Folder to clone into"
       />
+
+      <Text style={styles.label}>Or open a folder that is already on this machine</Text>
+      <TextInput
+        style={styles.input}
+        value={localFolder}
+        onChangeText={setLocalFolder}
+        onSubmitEditing={openLocalFolder}
+        placeholder="/absolute/path/to/project"
+        placeholderTextColor={theme.colors.foregroundMuted}
+        autoCapitalize="none"
+        autoCorrect={false}
+        accessibilityLabel="Local folder to open"
+      />
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Open local folder"
+        style={styles.button}
+        disabled={openLocal.isPending || !localFolder.trim()}
+        onPress={openLocalFolder}
+      >
+        <Text style={styles.buttonText}>Open folder</Text>
+      </Pressable>
+      {openLocal.error ? <Text style={styles.error}>{messageOf(openLocal.error)}</Text> : null}
+      {openLocal.data ? <Text style={styles.success}>Opened {openLocal.data}</Text> : null}
 
       {add.error ? <Text style={styles.error}>{messageOf(add.error)}</Text> : null}
       {add.data ? (

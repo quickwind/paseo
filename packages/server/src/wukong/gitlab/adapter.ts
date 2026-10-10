@@ -12,7 +12,7 @@ import { createGitLabPythonClient } from "./python-client.js";
 // Read once: a changed wukong.json takes effect when the daemon restarts.
 let cachedConfig: GitLabForgeConfig | null | undefined;
 
-function defaultConfig(): GitLabForgeConfig | null {
+export function defaultConfig(): GitLabForgeConfig | null {
   cachedConfig ??= loadGitLabForgeConfig(resolvePaseoHome());
   return cachedConfig;
 }

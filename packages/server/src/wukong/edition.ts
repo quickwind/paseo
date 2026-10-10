@@ -12,6 +12,10 @@ export function applyWukongEdition(): void {
   // The relay is a cloud service. A launch-time override also locks it against config edits.
   process.env.PASEO_RELAY_ENABLED = "false";
 
+  // No dictation or voice mode, so no speech models: nothing to download at startup.
+  process.env.PASEO_DICTATION_ENABLED = "false";
+  process.env.PASEO_VOICE_MODE_ENABLED = "false";
+
   for (const host of (process.env.WUKONG_ALLOWED_HOSTS ?? "").split(",")) {
     if (host.trim()) {
       allowEgressHost(host);

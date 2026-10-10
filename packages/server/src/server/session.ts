@@ -1,4 +1,5 @@
 import { AgentDirectory } from "./agent/directory.js";
+import { assertCloneAllowed } from "../wukong/gitlab/clone-policy.js"; // Wukong
 import { searchTimeline } from "./agent/chat-search/index.js";
 import type { BrowserToolsBroker } from "./browser-tools/broker.js";
 import { BrowserAutomationHostCapabilitySchema } from "@getpaseo/protocol/browser-automation/capabilities";
@@ -7132,6 +7133,7 @@ export class Session {
         repo: request.repo,
         cloneProtocol: request.cloneProtocol,
       });
+      assertCloneAllowed(repo.cloneUrl); // Wukong
       normalizedRepo = repo.displayName;
       const targetParent = resolve(expandTilde(request.targetDirectory.trim()));
       checkoutPath = resolve(targetParent, repo.name);
