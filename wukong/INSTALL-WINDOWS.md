@@ -157,6 +157,23 @@ wukong plugin install D:\plugins\paseo-bots-0.2.0-offline.2
 Check the download first if you like: `(Get-FileHash .\paseo-bots-0.2.0-offline.2.zip).Hash` should equal the
 hash in the `.sha256` file. Skills import from a folder on the machine, not from GitHub.
 
+## Run it in the background, and at sign-in
+
+`wukong daemon start` hides the daemon (no console window) and returns as soon as it is ready, so
+you can close the PowerShell window afterwards. `wukong daemon stop` stops it.
+
+To start it automatically whenever you sign in, with no administrator rights, run once from the
+folder that has `windows-autostart.ps1`:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\windows-autostart.ps1 install
+```
+
+That puts a shortcut in your own Startup folder (`shell:startup`). Use `status` to check it and
+`remove` to undo it. It starts when you sign in, not at boot, and stops when you sign out. If
+your PC blocks running scripts, create the same shortcut by hand: press Win+R, type
+`shell:startup`, add a shortcut to `cmd.exe /c wukong daemon start`, and set Run to Minimized.
+
 ## Usage
 
 **Settings -> Usage** shows your Devin ACU for the billing period (for example `9.31 / 30`), with a
