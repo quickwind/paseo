@@ -1,6 +1,9 @@
 // Wukong's own home and port, so it never shares them with a Paseo installed on the same machine.
-// Run from bin/wukong before the CLI starts. An explicit PASEO_HOME, or --home on the command
-// line, still wins.
+// Run from bin/wukong before the CLI starts.
+//
+// Wukong ignores the Paseo variables it inherits. A terminal opened inside Paseo exports
+// PASEO_HOME and PASEO_HOST for Paseo's own daemon, and honouring them would point `wukong` at
+// that daemon. WUKONG_HOME picks another home; `--home` on the command line still wins.
 
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import os from "node:os";
@@ -17,12 +20,13 @@ function expandHome(input: string, homeDirectory: string): string {
   return /^~[\\/]/u.test(input) ? path.join(homeDirectory, input.slice(2)) : input;
 }
 
-/** Points the CLI at ~/.wukong and gives a fresh home a config that listens on port 6899. */
+/** Points the CLI at ~/.wukong (or WUKONG_HOME) and gives a fresh home a config on port 6899. */
 export function applyWukongDefaults(
   env: NodeJS.ProcessEnv = process.env,
   homeDirectory: string = os.homedir(),
 ): void {
-  env.PASEO_HOME ||= wukongDefaultHome(homeDirectory);
+  delete env.PASEO_HOST;
+  env.PASEO_HOME = env.WUKONG_HOME || wukongDefaultHome(homeDirectory);
   const home = path.resolve(expandHome(env.PASEO_HOME, homeDirectory));
   const config = path.join(home, "config.json");
   if (existsSync(config)) return;

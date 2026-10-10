@@ -50,6 +50,9 @@ Wukong keeps to itself, so it can sit next to a Paseo you already run:
 - the command is `wukong` (it does not install a `paseo` command);
 - its data lives in `%USERPROFILE%\.wukong` (Paseo uses `%USERPROFILE%\.paseo`);
 - it listens on port 6899 (Paseo uses 6767).
+- it ignores the `PASEO_HOME` and `PASEO_HOST` variables that a terminal opened inside Paseo
+  carries, so it never talks to Paseo's daemon by accident. To use another folder, set
+  `WUKONG_HOME` (or pass `--home`).
 
 Other commands:
 
