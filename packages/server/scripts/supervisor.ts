@@ -60,6 +60,9 @@ interface SupervisorOptions {
   logFile?: SupervisorLogFileOptions;
 }
 
+// Wukong: `fork` passes every option to `spawn`, but @types/node does not list windowsHide for it.
+const HIDE_WORKER_CONSOLE = { windowsHide: true };
+
 export interface SupervisorController {
   requestShutdown(reason: string): void;
 }
@@ -295,7 +298,7 @@ export function runSupervisor(options: SupervisorOptions): SupervisorController 
         stdio: ["inherit", "pipe", "pipe", "ipc"],
         env: workerEnv,
         execArgv: workerExecArgv,
-        windowsHide: true,
+        ...HIDE_WORKER_CONSOLE,
       });
     }
 
