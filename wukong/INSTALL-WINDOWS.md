@@ -146,7 +146,7 @@ wukong plugin install D:\plugins\<plugin>
 ### Bots, offline
 
 `paseo-bots-<version>.zip` is the Bots plugin with everything that connects to the internet removed
-(connected apps, OpenAI avatars, GitHub imports, remote MCP servers). It installs without git, npm or
+(connected apps, OpenAI avatars, GitHub imports, testing of remote MCP servers). It installs without git, npm or
 internet:
 
 ```powershell
