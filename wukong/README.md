@@ -1,0 +1,108 @@
+# Wukong
+
+Wukong is Paseo for company machines: Claude Code and Devin CLI only, the company GitLab as the
+only forge, and no traffic from Paseo itself to cloud services. It is the `wukong` branch of this
+fork. Everything Wukong adds lives in a few directories so that syncing with upstream stays cheap.
+
+| Where                            | What                                                                          |
+| -------------------------------- | ----------------------------------------------------------------------------- |
+| `packages/server/src/wukong/`    | Daemon policy: egress guard, providers, plugins, GitLab adapter, clone policy |
+| `plugins/wukong-gitlab/`         | Bundled plugin: "Add project from GitLab" and "Open a local folder"           |
+| `packages/app/src/wukong/`       | Web UI switches and the Add Project redirect                                  |
+| `wukong/`                        | Brand assets, brand/publish scripts (this directory)                          |
+| `.github/workflows/wukong-*.yml` | Publish to npm, sync with upstream                                            |
+
+Upstream files Wukong touches are marked `// Wukong`: `rg "// Wukong"` lists every one of them.
+They are a handful of one-line hooks, not rewrites.
+
+## What Wukong does
+
+- **No cloud traffic from the daemon.** One hook on `net.Socket#connect` refuses every
+  connection that is not loopback, a local socket or a host in `WUKONG_ALLOWED_HOSTS`, and the
+  daemon refuses to listen on anything but loopback. That covers relay, Hub, push, registries,
+  update checks and whatever upstream adds later. Child processes (the provider CLIs, `git`,
+  `python-gitlab`) are outside the daemon and unaffected.
+- **Providers:** Claude Code and Devin CLI. Devin is a configured ACP provider (`devin acp`).
+  Other providers are removed from the registry, not just disabled.
+- **Plugins:** local directories only, plus the bundled `wukong-gitlab`. npm, Git and registry
+  installs and the other bundled plugins are off.
+- **Voice:** dictation, voice mode and speech model downloads are off.
+- **Web UI:** served by the daemon by default. Built with `EXPO_PUBLIC_WUKONG=1`, it has no voice
+  buttons, no upstream links, no What's new, no pairing-link option, and every Add Project entry
+  opens the GitLab screen.
+
+## GitLab
+
+Put the company GitLab in `<Paseo home>/wukong.json` (default `~/.paseo/wukong.json`):
+
+```json
+{
+  "gitlab": {
+    "url": "https://gitlab.example.com",
+    "configSection": "corp",
+    "sshHost": "git.example.com:2222",
+    "cloneRoot": "~/projects"
+  }
+}
+```
+
+`WUKONG_GITLAB_URL`, `WUKONG_GITLAB_SECTION`, `WUKONG_GITLAB_SSH_HOST`, `WUKONG_GITLAB_COMMAND`
+and `WUKONG_CLONE_ROOT` take precedence. The URL must be https. Install
+[python-gitlab](https://python-gitlab.readthedocs.io/) (`uv tool install python-gitlab`) and
+configure it as usual (`~/.python-gitlab.cfg`, including credential helpers). Paseo never sees the
+token.
+
+Merge request status, checks, merge, auto-merge and issues run through upstream's GitLab service.
+A glab-compatible runner (`packages/server/src/wukong/gitlab/glab-runner.ts`) answers the `glab`
+command lines that service issues with python-gitlab calls; no `glab` executable is involved. Not
+supported: rebase merges. The daemon's clone request clones only from this GitLab.
+
+## Publishing
+
+`wukong-publish.yml` runs on every push to `wukong`. It verifies, then (once `NPM_SCOPE` is set)
+rewrites the npm scope and the brand in a throwaway checkout, builds with `EXPO_PUBLIC_WUKONG=1`,
+publishes `<version>-wukong.<run>` for the seven packages and keeps the tarballs as an artifact.
+
+1. Choose the registry and scope (GitHub Packages, npmjs or an internal registry).
+2. Repository variables: `NPM_SCOPE` (required), `NPM_REGISTRY`, `NPM_ACCESS` (`restricted` by
+   default).
+3. Create the `npm-publish` environment and add `NPM_TOKEN` (not needed for GitHub Packages).
+4. Run `wukong/scripts/disable-upstream-workflows.sh <owner/repo>` once to turn off upstream
+   workflows that cannot work in the fork.
+
+Install all seven packages together, otherwise npm pulls the upstream versions from the public
+registry:
+
+```sh
+npm install -g @<scope>/cli @<scope>/server @<scope>/client @<scope>/protocol @<scope>/relay \
+  @<scope>/plugin @<scope>/highlight
+wukong daemon start
+```
+
+Tag releases with a prefix other than `v` (for example `wukong-20261010`): upstream's release
+workflows trigger on `v*`.
+
+## Staying in sync
+
+`main` mirrors upstream; `wukong` is `main` plus Wukong. `wukong-sync-upstream.yml` runs weekly,
+fast-forwards `main`, merges it into a `sync/upstream-*` branch, runs the brand and Wukong tests
+and the typecheck, and opens a pull request. A conflict opens an issue naming the files. Run the
+same merge locally with `git config rerere.enabled true` and a conflict you resolved once is
+resolved the same way next time.
+
+Three tests fail loudly when an upstream change needs attention, instead of letting a build ship
+half-adapted:
+
+- `wukong/scripts/brand.test.mjs`: a brand rule no longer matches, or a replaced file changed.
+- `packages/server/src/wukong/gitlab/glab-runner.test.ts`: upstream changed a `glab` command line.
+- `packages/server/src/wukong/plugins.test.ts` and `providers.test.ts`: a hook moved.
+
+## Not covered
+
+- Nothing intercepts what the provider CLIs themselves send; they reach their own services.
+- The egress guard does not see DNS lookups or UDP.
+- Pairing links: the option is hidden in Settings, but the welcome screen and `/pair-scan` still
+  accept a pasted link, which is a deliberate user action.
+- Links to `paseo.sh/docs` remain; they open only when clicked.
+- The GitLab integration has not been run against a live GitLab (version 19.0 in particular):
+  start with auto-merge, which python-gitlab exposes only through the older parameter.

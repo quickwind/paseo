@@ -1,0 +1,136 @@
+// Wukong: applies the brand to a checkout. Run it on a throwaway CI checkout before building,
+// never commit its result. The source keeps the upstream name, so upstream's i18n files, icons
+// and metadata merge without conflicts and the brand lives in this directory instead.
+//
+// Every rule must find what it expects. When an upstream change moves or rewrites the target,
+// the run fails and names the rule, so a sync cannot silently ship a half-branded build.
+//
+// Usage: node wukong/scripts/brand.mjs [--root <dir>] [--dry-run]
+
+import { createHash } from "node:crypto";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = path.resolve(here, "..", "..");
+const OVERLAY_ROOT = path.join(here, "..", "brand", "files");
+const BRAND = "Wukong";
+const UPSTREAM_NAME = /\bPaseo\b/gu;
+
+// Source files replaced wholesale. The hash is the upstream version the replacement was
+// written against; a different upstream file means the replacement needs another look.
+const GUARDED_OVERLAYS = {
+  "packages/app/src/components/icons/paseo-logo.tsx":
+    "daf84f1ce2598b60b57ea80bbaf0d208e6466da5d6c5d5fd9e142ffa7300680b",
+};
+
+// Files with no user-visible product name.
+const I18N_WITHOUT_NAME = new Set(["plugin-settings.ts"]);
+
+const sha256 = (buffer) => createHash("sha256").update(buffer).digest("hex");
+
+function listOverlayFiles(directory = OVERLAY_ROOT) {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const full = path.join(directory, entry.name);
+    return entry.isDirectory() ? listOverlayFiles(full) : [path.relative(OVERLAY_ROOT, full)];
+  });
+}
+
+function textRules(root) {
+  const i18nDirectory = path.join(root, "packages/app/src/i18n/resources");
+  const i18n = readdirSync(i18nDirectory)
+    .filter((file) => file.endsWith(".ts") && !file.endsWith(".test.ts"))
+    .map((file) => ({
+      file: `packages/app/src/i18n/resources/${file}`,
+      pattern: UPSTREAM_NAME,
+      replacement: BRAND,
+      optional: I18N_WITHOUT_NAME.has(file),
+    }));
+  return [
+    ...i18n,
+    {
+      file: "packages/app/public/manifest.json",
+      pattern: /"(name|short_name)": "Paseo"/gu,
+      replacement: `"$1": "${BRAND}"`,
+    },
+    {
+      file: "packages/app/public/index.html",
+      pattern: /(apple-mobile-web-app-title" content=")Paseo"/gu,
+      replacement: `$1${BRAND}"`,
+    },
+    {
+      file: "packages/app/app.config.js",
+      pattern: /name: "Paseo( Debug)?"/gu,
+      replacement: `name: "${BRAND}$1"`,
+    },
+  ];
+}
+
+function applyTextRule(root, rule, dryRun, log) {
+  const target = path.join(root, rule.file);
+  if (!existsSync(target)) {
+    throw new Error(`Brand rule target is missing: ${rule.file}`);
+  }
+  const text = readFileSync(target, "utf8");
+  const matches = text.match(rule.pattern)?.length ?? 0;
+  if (matches === 0) {
+    // Already branded (a second run) is fine; a target that never had the name is not.
+    if (rule.optional || text.includes(BRAND)) return;
+    throw new Error(`Brand rule found nothing to replace in ${rule.file} (${rule.pattern})`);
+  }
+  log(`text    ${rule.file} (${matches})`);
+  if (!dryRun) writeFileSync(target, text.replace(rule.pattern, rule.replacement));
+}
+
+function applyOverlay(root, relative, dryRun, log) {
+  const source = path.join(OVERLAY_ROOT, relative);
+  const target = path.join(root, relative);
+  const replacement = readFileSync(source);
+  const guard = GUARDED_OVERLAYS[relative.split(path.sep).join("/")];
+  const isNewFile = relative.endsWith("wukong-logo-geometry.ts");
+  if (!isNewFile && !existsSync(target)) {
+    throw new Error(`Brand overlay target is missing (renamed or removed upstream?): ${relative}`);
+  }
+  if (guard && existsSync(target)) {
+    const current = sha256(readFileSync(target));
+    if (current !== guard && current !== sha256(replacement)) {
+      throw new Error(
+        `Upstream changed ${relative}. Review the change, update wukong/brand/files and the hash in brand.mjs.`,
+      );
+    }
+  }
+  log(`overlay ${relative}`);
+  if (!dryRun) {
+    writeFileSync(target, replacement);
+  }
+}
+
+function ensureWukongBin(root, dryRun, log) {
+  const file = path.join(root, "packages/cli/package.json");
+  const manifest = JSON.parse(readFileSync(file, "utf8"));
+  if (!manifest.bin?.paseo) {
+    throw new Error("packages/cli/package.json has no `paseo` bin to alias as `wukong`");
+  }
+  if (manifest.bin.wukong === manifest.bin.paseo) return;
+  log("bin     packages/cli/package.json: wukong -> same entry as paseo");
+  if (!dryRun) {
+    manifest.bin = { ...manifest.bin, wukong: manifest.bin.paseo };
+    writeFileSync(file, `${JSON.stringify(manifest, null, 2)}\n`);
+  }
+}
+
+export function applyBrand({ root = REPO_ROOT, dryRun = false, log = () => {} } = {}) {
+  for (const rule of textRules(root)) applyTextRule(root, rule, dryRun, log);
+  for (const relative of listOverlayFiles()) applyOverlay(root, relative, dryRun, log);
+  ensureWukongBin(root, dryRun, log);
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const args = process.argv.slice(2);
+  const rootIndex = args.indexOf("--root");
+  const root = rootIndex === -1 ? REPO_ROOT : path.resolve(args[rootIndex + 1] ?? "");
+  const dryRun = args.includes("--dry-run");
+  applyBrand({ root, dryRun, log: (line) => process.stdout.write(`${line}\n`) });
+  process.stdout.write(`${dryRun ? "Checked" : "Applied"} the ${BRAND} brand in ${root}\n`);
+}
