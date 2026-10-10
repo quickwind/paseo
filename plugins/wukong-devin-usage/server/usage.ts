@@ -179,12 +179,14 @@ export function reportFromStatus(body: unknown, now: Date = new Date()): UsageRe
   const parsed = UserStatusSchema.safeParse(body);
   const plan = parsed.success ? parsed.data.userStatus?.planStatus : undefined;
   if (!plan) throw new Error("Devin usage response has no plan status; the API may have changed");
-  const limit = plan.acuLimit ?? 0;
-  if (limit <= 0) {
+  // A plan with no ACU figures at all is not ACU-billed. One that reports a limit of zero (or
+  // omits it, as proto3 JSON does for zero) has no allowance left: fully used, not "no limit".
+  if (plan.acuLimit === undefined && plan.acuConsumed === undefined) {
     return unavailable({ kind: "no_quota", detail: "This Devin plan reports no ACU limit" });
   }
+  const limit = plan.acuLimit ?? 0;
   const consumed = plan.acuConsumed ?? 0;
-  const usedPct = Math.min(100, (consumed / limit) * 100);
+  const usedPct = limit > 0 ? Math.min(100, (consumed / limit) * 100) : 100;
   const forecast = forecastMonth(consumed, limit, now);
   const window: UsageWindow = {
     id: "acu-period",
@@ -223,7 +225,7 @@ export function reportFromStatus(body: unknown, now: Date = new Date()): UsageRe
         weather.tone,
       ),
     );
-  } else {
+  } else if (limit > 0) {
     details.push(
       detail("acu-forecast", "Forecast", `after ${MIN_FORECAST_DAYS} days of data this month`),
     );

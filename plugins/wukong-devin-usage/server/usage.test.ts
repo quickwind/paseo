@@ -102,10 +102,35 @@ describe("reportFromStatus", () => {
     expect(report.details?.[0]?.value).toBe("0 / 30");
   });
 
-  it("says so when the plan has no ACU limit rather than showing zero", () => {
+  it("says so when the plan has no ACU figures at all, rather than showing zero", () => {
     expect(reportFromStatus({ userStatus: { planStatus: { planInfo: {} } } }, NOW)).toEqual({
       status: "unavailable",
       problem: { kind: "no_quota", detail: "This Devin plan reports no ACU limit" },
+    });
+  });
+
+  it("shows a limit of zero as fully used, with no forecast", () => {
+    for (const planStatus of [
+      { acuLimit: 0, acuConsumed: 0 },
+      { acuLimit: 0 },
+      { acuConsumed: 9.31 }, // proto3 JSON leaves a zero limit out
+    ]) {
+      const report = available(reportFromStatus({ userStatus: { planStatus } }, NOW));
+      const [window] = report.windows;
+      expect(report.windows).toHaveLength(1);
+      expect(window?.usedPct).toBe(100);
+      expect(window?.remainingPct).toBe(0);
+      expect(window?.tone).toBe("danger");
+      expect(window?.resetsAt).toBe("2026-11-01T00:00:00.000Z");
+      expect(report.details?.map((d) => d.id)).toEqual(["acu"]);
+    }
+    const shown = available(
+      reportFromStatus({ userStatus: { planStatus: { acuLimit: 0, acuConsumed: 9.31 } } }, NOW),
+    );
+    expect(shown.details?.[0]).toMatchObject({
+      label: "ACU used",
+      value: "9.31 / 0",
+      tone: "danger",
     });
   });
 
