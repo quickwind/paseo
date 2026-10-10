@@ -82,6 +82,7 @@ import { useIsLocalDaemon, useLocalDaemonServerId } from "@/hooks/use-is-local-d
 import { useCloneGithubProject, useOpenProject } from "@/hooks/use-open-project";
 import { WUKONG_BUILD } from "@/wukong/build"; // Wukong
 import { useOpenGitLabProjects } from "@/wukong/open-gitlab-projects"; // Wukong
+import { pickDirectoryOnDaemon } from "@/wukong/pick-directory"; // Wukong
 import {
   OverlayLayerProvider,
   useGlobalWebOverlayLayer,
@@ -344,7 +345,9 @@ export function AddProjectFlow({ request, onClose }: AddProjectFlowProps) {
             serverId: host.serverId,
             label: host.label,
             canAddProject,
-            canBrowse: canAddProject && getIsElectronRuntime() && localServerId === host.serverId,
+            canBrowse:
+              canAddProject &&
+              (WUKONG_BUILD || (getIsElectronRuntime() && localServerId === host.serverId)), // Wukong: the daemon opens the dialog
             canCloneGithubRepositories: githubCloneByHost.get(host.serverId) === true,
             canSearchGithubRepositories: githubSearchByHost.get(host.serverId) === true,
             canCreateDirectory: createDirectoryByHost.get(host.serverId) === true,
@@ -509,10 +512,10 @@ export function AddProjectFlow({ request, onClose }: AddProjectFlowProps) {
   );
 
   const browse = useCallback(async () => {
-    if (!hostId || !isLocalDaemon || browseInFlightRef.current) return;
+    if (!hostId || (!isLocalDaemon && !WUKONG_BUILD) || browseInFlightRef.current) return; // Wukong
     browseInFlightRef.current = true;
     try {
-      const path = await pickDirectory();
+      const path = WUKONG_BUILD ? await pickDirectoryOnDaemon(client) : await pickDirectory(); // Wukong
       if (path) await openAddedProject(path, "method");
     } catch {
       setState((current) =>
@@ -521,7 +524,7 @@ export function AddProjectFlow({ request, onClose }: AddProjectFlowProps) {
     } finally {
       browseInFlightRef.current = false;
     }
-  }, [hostId, isLocalDaemon, openAddedProject]);
+  }, [client, hostId, isLocalDaemon, openAddedProject]);
 
   const selectMethod = useCallback(
     (method: AddProjectMethodId) => {

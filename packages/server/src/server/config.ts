@@ -1,4 +1,5 @@
 import { configurationEnvironment } from "./config-environment.js";
+import { wukongTerminalProfiles } from "../wukong/terminal-profiles.js"; // Wukong
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -524,7 +525,7 @@ function resolveBrowserToolsEnabled(persisted: ReturnType<typeof loadPersistedCo
  */
 function resolveProfileLists(persisted: ReturnType<typeof loadPersistedConfig>) {
   return {
-    terminalProfiles: persisted.daemon?.terminalProfiles,
+    terminalProfiles: wukongTerminalProfiles(persisted.daemon?.terminalProfiles), // Wukong
     agentProfiles: persisted.daemon?.agentProfiles,
   };
 }

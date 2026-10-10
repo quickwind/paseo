@@ -68,4 +68,12 @@ describe("Wukong settings and Add Project", () => {
     const entry = buildAddProjectMethods(host).find((method) => method.id === "github");
     expect(entry?.label).toBe("Clone from GitHub");
   });
+
+  it("offers Open folder (the daemon's system dialog) when the host can browse", async () => {
+    vi.stubEnv("EXPO_PUBLIC_WUKONG", "1");
+    vi.resetModules();
+    const { buildAddProjectMethods } = await import("@/add-project-flow/options");
+    const methods = buildAddProjectMethods({ ...(host as object), canBrowse: true } as never);
+    expect(methods.find((method) => method.id === "browse")?.label).toBe("Open folder");
+  });
 });

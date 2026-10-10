@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { pathToFileURL } from "node:url";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -36,7 +37,7 @@ beforeEach(() => {
   process.env.WUKONG_GITLAB_URL = GITLAB;
   process.env.WUKONG_CLONE_ROOT = join(work, "clones");
   process.env.GIT_CONFIG_COUNT = "1";
-  process.env.GIT_CONFIG_KEY_0 = `url.file://${remotes}/.insteadOf`;
+  process.env.GIT_CONFIG_KEY_0 = `url.${pathToFileURL(remotes).href}/.insteadOf`;
   process.env.GIT_CONFIG_VALUE_0 = `${GITLAB}/`;
 });
 
@@ -45,7 +46,9 @@ afterEach(() => {
   Object.assign(process.env, saved);
 });
 
-function fakeGitLab(rows: unknown[]): string {
+// The command goes in wukong.json as an array: the environment variable splits on spaces, which
+// breaks on a Windows path such as C:\\Program Files\\nodejs\\node.exe.
+function fakeGitLab(rows: unknown[]): void {
   const script = join(work, "fake-gitlab.mjs");
   writeFileSync(
     script,
@@ -53,12 +56,16 @@ function fakeGitLab(rows: unknown[]): string {
 writeFileSync(${JSON.stringify(join(work, "argv.json"))}, JSON.stringify(process.argv.slice(2)));
 console.log(${JSON.stringify(JSON.stringify(rows))});`,
   );
-  return `${process.execPath} ${script}`;
+  mkdirSync(process.env.PASEO_HOME ?? "", { recursive: true });
+  writeFileSync(
+    join(process.env.PASEO_HOME ?? "", "wukong.json"),
+    JSON.stringify({ gitlab: { command: [process.execPath, script] } }),
+  );
 }
 
 describe("search", () => {
   it("lists the user's projects through python-gitlab and reports the clone root", async () => {
-    process.env.WUKONG_GITLAB_COMMAND = fakeGitLab([
+    fakeGitLab([
       {
         path_with_namespace: "group/app",
         name: "app",
@@ -95,7 +102,7 @@ describe("search", () => {
   });
 
   it("escapes a query that python-gitlab would read as a file", async () => {
-    process.env.WUKONG_GITLAB_COMMAND = fakeGitLab([]);
+    fakeGitLab([]);
     await search({ query: "@secret" });
     const argv = JSON.parse(readFileSync(join(work, "argv.json"), "utf8")) as string[];
     expect(argv).toContain("--search=@@secret");

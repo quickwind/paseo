@@ -22,6 +22,7 @@ import {
   DEFAULT_TERMINAL_PROFILES,
 } from "@getpaseo/protocol/terminal-profiles";
 import { AgentProfilesSection } from "@/agent-profiles";
+import { HIDDEN_ROW_STYLE, WUKONG_BUILD } from "@/wukong/build"; // Wukong
 import { AgentSkillsSection } from "@/agent-skills";
 import { AdaptiveModalSheet, type SheetHeader } from "@/components/adaptive-modal-sheet";
 import { SettingsTextAreaCard } from "@/components/settings-textarea";
@@ -1385,7 +1386,7 @@ function TerminalProfileRow({
           {commandText}
         </Text>
       </View>
-      <View style={terminalProfileStyles.rowActions}>
+      <View style={WUKONG_BUILD ? HIDDEN_ROW_STYLE : terminalProfileStyles.rowActions}>
         <Button
           variant="ghost"
           size="sm"
@@ -1606,7 +1607,7 @@ function TerminalProfilesSection({ serverId }: { serverId: string }) {
     <>
       <SettingsSection
         title={t("settings.host.terminalProfiles.sectionTitle")}
-        trailing={addButton}
+        trailing={WUKONG_BUILD ? undefined : addButton} // Wukong: Claude Code only
         testID="terminal-profiles-section"
       >
         <View style={settingsStyles.card} testID="terminal-profiles-card">

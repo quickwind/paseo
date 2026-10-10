@@ -45,8 +45,10 @@ export function buildAddProjectMethods(host: AddProjectHost): AddProjectMethodOp
   if (host.canBrowse) {
     options.push({
       id: "browse",
-      label: "Browse",
-      description: "Choose or create a directory in Finder",
+      label: WUKONG_BUILD ? "Open folder" : "Browse", // Wukong
+      description: WUKONG_BUILD
+        ? "Choose a folder with the system dialog"
+        : "Choose or create a directory in Finder",
     });
   }
   options.push({

@@ -16,7 +16,7 @@ export interface GitLabSettings {
 
 export function expandHome(input: string): string {
   if (input === "~") return homedir();
-  return input.startsWith("~/") ? join(homedir(), input.slice(2)) : input;
+  return /^~[\\/]/u.test(input) ? join(homedir(), input.slice(2)) : input;
 }
 
 function readFile(paseoHome: string): Record<string, unknown> {

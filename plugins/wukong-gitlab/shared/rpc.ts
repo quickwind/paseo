@@ -31,3 +31,10 @@ export const cloneProjectRpc = defineRpc({
   }),
   output: z.object({ directory: z.string(), workspaceId: z.string(), alreadyCloned: z.boolean() }),
 });
+
+export const pickFolderRpc = defineRpc({
+  name: "wukong.pick-folder",
+  input: z.object({ title: z.string().max(200).optional() }),
+  /** `null` when the user cancels the dialog. */
+  output: z.object({ path: z.string().nullable() }),
+});
