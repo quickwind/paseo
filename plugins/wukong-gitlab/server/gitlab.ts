@@ -12,8 +12,19 @@ const ProjectRowSchema = z
     description: z.string().nullable().optional(),
     web_url: z.string().nullable().optional(),
     last_activity_at: z.string().nullable().optional(),
+    namespace: z.object({ kind: z.string().optional() }).passthrough().nullable().optional(),
+    forked_from_project: z
+      .object({ path_with_namespace: z.string().optional() })
+      .passthrough()
+      .nullable()
+      .optional(),
   })
   .passthrough();
+
+function namespaceKind(row: z.infer<typeof ProjectRowSchema>): "group" | "user" | null {
+  const kind = row.namespace?.kind;
+  return kind === "group" || kind === "user" ? kind : null;
+}
 
 /** A leading `@` makes python-gitlab read the value from a file; doubling it escapes that. */
 function cliValue(value: string): string {
@@ -49,23 +60,32 @@ function run(file: string, args: string[], env?: NodeJS.ProcessEnv): Promise<str
   });
 }
 
+function globalArgs(settings: GitLabSettings): string[] {
+  return [
+    "--output=json",
+    "--skip-login",
+    `--server-url=${settings.url}`,
+    ...(settings.configSection ? [`--gitlab=${settings.configSection}`] : []),
+  ];
+}
+
+/** Runs one python-gitlab command and returns its stdout. */
+function gitlab(settings: GitLabSettings, args: string[]): Promise<string> {
+  const [file = "gitlab", ...prefix] = settings.command;
+  return run(file, [...prefix, ...globalArgs(settings), ...args]);
+}
+
 export async function searchProjects(
   settings: GitLabSettings,
   query: string,
   limit: number,
 ): Promise<GitLabProject[]> {
-  const [file = "gitlab", ...prefix] = settings.command;
   const trimmed = query.trim();
-  const stdout = await run(file, [
-    ...prefix,
-    "--output=json",
-    "--skip-login",
-    `--server-url=${settings.url}`,
-    ...(settings.configSection ? [`--gitlab=${settings.configSection}`] : []),
+  // Not `--simple`: the full record says whether a project belongs to a group and what it forks.
+  const stdout = await gitlab(settings, [
     "project",
     "list",
     option("membership", true),
-    option("simple", true),
     option("order-by", "last_activity_at"),
     option("sort", "desc"),
     option("per-page", limit),
@@ -81,6 +101,8 @@ export async function searchProjects(
       description: row.description ?? null,
       webUrl: row.web_url ?? null,
       lastActivityAt: row.last_activity_at ?? null,
+      namespaceKind: namespaceKind(row),
+      forkedFrom: row.forked_from_project?.path_with_namespace ?? null,
     }));
 }
 
@@ -115,5 +137,72 @@ export async function remoteOf(directory: string): Promise<string | null> {
     return (await run("git", ["-C", directory, "remote", "get-url", "origin"])).trim();
   } catch {
     return null;
+  }
+}
+
+const ForkProjectSchema = ProjectRowSchema.extend({
+  import_status: z.string().nullable().optional(),
+  import_error: z.string().nullable().optional(),
+});
+
+export interface ProjectInfo {
+  path: string;
+  forkedFrom: string | null;
+  /** `null` once the repository is ready to clone. */
+  importing: string | null;
+  importError: string | null;
+}
+
+function toProjectInfo(raw: unknown): ProjectInfo {
+  const row = ForkProjectSchema.parse(raw);
+  // A fork's repository is built in the background; until it finishes there is nothing to clone.
+  const status = row.import_status ?? "none";
+  return {
+    path: row.path_with_namespace,
+    forkedFrom: row.forked_from_project?.path_with_namespace ?? null,
+    importing: status === "finished" || status === "none" ? null : status,
+    importError: row.import_error ?? null,
+  };
+}
+
+export async function currentUsername(settings: GitLabSettings): Promise<string> {
+  const user = z
+    .object({ username: z.string() })
+    .passthrough()
+    .parse(JSON.parse(await gitlab(settings, ["current-user", "get"])));
+  return user.username;
+}
+
+/** The project at `path`, or null when GitLab says it does not exist (or is not visible). */
+export async function getProject(
+  settings: GitLabSettings,
+  path: string,
+): Promise<ProjectInfo | null> {
+  assertProjectPath(path);
+  try {
+    return toProjectInfo(
+      JSON.parse(await gitlab(settings, ["project", "get", option("id", path)])),
+    );
+  } catch (error) {
+    if (/\b404\b|not found/iu.test((error as Error).message)) return null;
+    throw error;
+  }
+}
+
+/** Forks `path` into the user's own namespace. GitLab answers before the fork's repository exists. */
+export async function forkProject(settings: GitLabSettings, path: string): Promise<ProjectInfo> {
+  assertProjectPath(path);
+  const stdout = await gitlab(settings, ["project-fork", "create", option("project-id", path)]);
+  return toProjectInfo(JSON.parse(stdout));
+}
+
+/** Adds `name` -> `url` unless the remote already exists. Returns whether it was added. */
+export async function addRemote(directory: string, name: string, url: string): Promise<boolean> {
+  try {
+    await run("git", ["-C", directory, "remote", "get-url", name]);
+    return false;
+  } catch {
+    await run("git", ["-C", directory, "remote", "add", name, url]);
+    return true;
   }
 }

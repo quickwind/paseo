@@ -1,13 +1,16 @@
 import type { PluginServerContext } from "@getpaseo/plugin/server";
 import {
-  cloneProjectRpc,
+  pollCloneRpc,
   pollPickFolderRpc,
   searchProjectsRpc,
+  startCloneRpc,
   startPickFolderRpc,
+  type CloneResult,
 } from "./shared/rpc.js";
 import { pickFolder } from "./server/pick-folder.js";
 import { createFolderPickerSessions } from "./server/pick-folder-sessions.js";
-import { clone, search } from "./server/projects.js";
+import { createJobs } from "./server/jobs.js";
+import { runClone, search } from "./server/projects.js";
 
 // These lines land in the daemon log, so a dialog that never appears can be traced.
 const folderPicker = createFolderPickerSessions(async (title) => {
@@ -22,9 +25,14 @@ const folderPicker = createFolderPickerSessions(async (title) => {
   }
 });
 
+const cloneJobs = createJobs<CloneResult>();
+
 export default function contribute(server: PluginServerContext) {
   server.handle(searchProjectsRpc, search);
-  server.handle(cloneProjectRpc, clone);
+  server.handle(startCloneRpc, (input) => ({
+    id: cloneJobs.start((report) => runClone(input, report), input.fork ? "Forking…" : "Cloning…"),
+  }));
+  server.handle(pollCloneRpc, ({ id }) => cloneJobs.poll(id));
   server.handle(startPickFolderRpc, ({ title }) => ({ id: folderPicker.start(title) }));
   server.handle(pollPickFolderRpc, ({ id }) => folderPicker.poll(id));
   return () => {};

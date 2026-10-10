@@ -3,7 +3,13 @@ import { usePaseo, useRpc } from "@getpaseo/plugin/client";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from "react-native";
-import { cloneProjectRpc, searchProjectsRpc, type GitLabProject } from "../shared/rpc.js";
+import {
+  pollCloneRpc,
+  searchProjectsRpc,
+  startCloneRpc,
+  type CloneResult,
+  type GitLabProject,
+} from "../shared/rpc.js";
 
 const SEARCH_DELAY_MS = 300;
 
@@ -18,6 +24,58 @@ function useDebounced(value: string): string {
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+const POLL_INTERVAL_MS = 1000;
+const GIVE_UP_AFTER_MS = 30 * 60 * 1000;
+
+type CloneState =
+  | { status: "idle" }
+  | { status: "running"; path: string; fork: boolean; step: string }
+  | { status: "done"; path: string; fork: boolean; result: CloneResult }
+  | { status: "failed"; path: string; fork: boolean; error: string };
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/** Starts a clone (or fork then clone) on the daemon, follows it, and opens the result. */
+function useCloneJob(parentDirectory: string) {
+  const start = useRpc(startCloneRpc);
+  const poll = useRpc(pollCloneRpc);
+  const paseo = usePaseo();
+  const [state, setState] = useState<CloneState>({ status: "idle" });
+  const running = state.status === "running";
+
+  const run = useCallback(
+    async (project: GitLabProject, fork: boolean) => {
+      if (running) return;
+      const path = project.path;
+      setState({ status: "running", path, fork, step: fork ? "Forking…" : "Cloning…" });
+      try {
+        const { id } = await start({
+          path,
+          fork,
+          parentDirectory: parentDirectory.trim() || undefined,
+        });
+        for (let waited = 0; waited <= GIVE_UP_AFTER_MS; waited += POLL_INTERVAL_MS) {
+          const job = await poll({ id });
+          if (job.state === "failed") throw new Error(job.error ?? "The clone failed");
+          if (job.state === "done" && job.result) {
+            await paseo.workspaces.open(job.result.directory);
+            setState({ status: "done", path, fork, result: job.result });
+            return;
+          }
+          setState({ status: "running", path, fork, step: job.step });
+          await sleep(POLL_INTERVAL_MS);
+        }
+        throw new Error("The clone is taking too long; check the daemon log");
+      } catch (error) {
+        setState({ status: "failed", path, fork, error: messageOf(error) });
+      }
+    },
+    [running, start, poll, paseo, parentDirectory],
+  );
+
+  return { state, run };
 }
 
 function createStyles(theme: PluginScreenProps["theme"], compact: boolean) {
@@ -54,6 +112,16 @@ function createStyles(theme: PluginScreenProps["theme"], compact: boolean) {
       backgroundColor: theme.colors.accent,
     },
     buttonText: { color: theme.colors.accentForeground },
+    buttons: { flexDirection: "row" as const, gap: 8, flexWrap: "wrap" as const },
+    secondaryButton: {
+      marginTop: 8,
+      padding: 8,
+      alignSelf: "flex-start" as const,
+      borderRadius: 6,
+      borderColor: theme.colors.accent,
+      borderWidth: 1,
+    },
+    secondaryButtonText: { color: theme.colors.accent },
     error: { color: theme.colors.statusDanger, marginTop: 12 },
     success: { color: theme.colors.statusSuccess, marginTop: 12 },
   };
@@ -63,32 +131,69 @@ interface ProjectRowProps {
   project: GitLabProject;
   styles: ReturnType<typeof createStyles>;
   busy: boolean;
-  cloning: boolean;
-  onClone(project: GitLabProject): void;
+  /** What the running job on this row is doing, or null if it is not the running row. */
+  activeKind: "clone" | "fork" | null;
+  onClone(project: GitLabProject, fork: boolean): void;
 }
 
-function ProjectRow({ project, styles, busy, cloning, onClone }: ProjectRowProps) {
-  const press = useCallback(() => onClone(project), [onClone, project]);
+function ProjectRow({ project, styles, busy, activeKind, onClone }: ProjectRowProps) {
+  const pressClone = useCallback(() => onClone(project, false), [onClone, project]);
+  const pressFork = useCallback(() => onClone(project, true), [onClone, project]);
+  // A team project is cloned through the user's own fork; a personal project or a fork is cloned as is.
+  const offersFork = project.namespaceKind === "group";
   return (
     <View style={styles.row}>
       <Text style={styles.title}>{project.path}</Text>
+      {project.forkedFrom ? <Text style={styles.muted}>Fork of {project.forkedFrom}</Text> : null}
       {project.description ? <Text style={styles.muted}>{project.description}</Text> : null}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`Clone ${project.path}`}
-        style={styles.button}
-        disabled={busy}
-        onPress={press}
-      >
-        <Text style={styles.buttonText}>{cloning ? "Cloning…" : "Clone and open"}</Text>
-      </Pressable>
+      <View style={styles.buttons}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Clone ${project.path}`}
+          style={styles.button}
+          disabled={busy}
+          onPress={pressClone}
+        >
+          <Text style={styles.buttonText}>
+            {activeKind === "clone" ? "Cloning…" : "Clone and open"}
+          </Text>
+        </Pressable>
+        {offersFork ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Fork and clone ${project.path}`}
+            style={styles.secondaryButton}
+            disabled={busy}
+            onPress={pressFork}
+          >
+            <Text style={styles.secondaryButtonText}>
+              {activeKind === "fork" ? "Forking…" : "Fork clone"}
+            </Text>
+          </Pressable>
+        ) : null}
+      </View>
     </View>
   );
 }
 
+function activeKindFor(state: CloneState, path: string): "clone" | "fork" | null {
+  if (state.status !== "running" || state.path !== path) return null;
+  return state.fork ? "fork" : "clone";
+}
+
+function describe(state: Extract<CloneState, { status: "done" }>): string {
+  const { result } = state;
+  if (result.forkedFrom) {
+    return (
+      `${result.alreadyCloned ? "Opened your existing clone of" : "Forked and cloned"} ` +
+      `${result.clonedPath} in ${result.directory}. Its "upstream" remote is ${result.forkedFrom}.`
+    );
+  }
+  return `${result.alreadyCloned ? "Opened existing clone " : "Cloned and opened "}${result.directory}`;
+}
+
 export function AddFromGitLabScreen({ theme, layout }: PluginScreenProps) {
   const search = useRpc(searchProjectsRpc);
-  const clone = useRpc(cloneProjectRpc);
   const [query, setQuery] = useState("");
   const [folder, setFolder] = useState("");
   const [localFolder, setLocalFolder] = useState("");
@@ -101,10 +206,7 @@ export function AddFromGitLabScreen({ theme, layout }: PluginScreenProps) {
   });
   const cloneRoot = results.data?.cloneRoot ?? "";
 
-  const add = useMutation({
-    mutationFn: (project: GitLabProject) =>
-      clone({ path: project.path, parentDirectory: folder.trim() || undefined }),
-  });
+  const { state: cloneState, run: runClone } = useCloneJob(folder);
 
   const openLocal = useMutation({
     mutationFn: async (directory: string) => (await paseo.workspaces.open(directory)).directory,
@@ -165,12 +267,18 @@ export function AddFromGitLabScreen({ theme, layout }: PluginScreenProps) {
       {openLocal.error ? <Text style={styles.error}>{messageOf(openLocal.error)}</Text> : null}
       {openLocal.data ? <Text style={styles.success}>Opened {openLocal.data}</Text> : null}
 
-      {add.error ? <Text style={styles.error}>{messageOf(add.error)}</Text> : null}
-      {add.data ? (
-        <Text style={styles.success}>
-          {add.data.alreadyCloned ? "Opened existing clone " : "Cloned and opened "}
-          {add.data.directory}
+      {cloneState.status === "running" ? (
+        <Text style={styles.muted}>
+          {cloneState.path}: {cloneState.step}
         </Text>
+      ) : null}
+      {cloneState.status === "failed" ? (
+        <Text style={styles.error}>
+          {cloneState.path}: {cloneState.error}
+        </Text>
+      ) : null}
+      {cloneState.status === "done" ? (
+        <Text style={styles.success}>{describe(cloneState)}</Text>
       ) : null}
       {results.error ? <Text style={styles.error}>{messageOf(results.error)}</Text> : null}
 
@@ -183,9 +291,9 @@ export function AddFromGitLabScreen({ theme, layout }: PluginScreenProps) {
             key={project.path}
             project={project}
             styles={styles}
-            busy={add.isPending}
-            cloning={add.isPending && add.variables?.path === project.path}
-            onClone={add.mutate}
+            busy={cloneState.status === "running"}
+            activeKind={activeKindFor(cloneState, project.path)}
+            onClone={runClone}
           />
         ))}
         {results.data && results.data.projects.length === 0 ? (

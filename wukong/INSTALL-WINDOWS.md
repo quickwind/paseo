@@ -113,7 +113,9 @@ byte order mark.
 3. **A Claude Code agent.** Open a project, start a chat, send a message.
 4. **A terminal.** Open a terminal in a workspace; the profile list should offer Claude Code only.
 5. **GitLab** (after the step above). Add project, then **Clone from GitLab**; search, clone, and
-   the project opens.
+   the project opens. A team (group) project also has a **Fork clone** button: it forks the project
+   into your own namespace, waits for GitLab to build the fork, clones your fork, and adds an
+   `upstream` remote that points at the original. If you already have a fork it is reused.
 6. **Settings.** There should be no Pair device section, no Usage section, and the Providers page
    should list only Claude and Devin CLI.
 

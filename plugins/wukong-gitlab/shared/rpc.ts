@@ -7,6 +7,10 @@ export const GitLabProjectSchema = z.object({
   description: z.string().nullable(),
   webUrl: z.string().nullable(),
   lastActivityAt: z.string().nullable(),
+  /** `group` for a team project, `user` for a personal one, `null` if GitLab did not say. */
+  namespaceKind: z.enum(["group", "user"]).nullable(),
+  /** The path of the project this one was forked from, when it is a fork. */
+  forkedFrom: z.string().nullable(),
 });
 
 export type GitLabProject = z.infer<typeof GitLabProjectSchema>;
@@ -21,15 +25,42 @@ export const searchProjectsRpc = defineRpc({
   }),
 });
 
-export const cloneProjectRpc = defineRpc({
-  name: "wukong.gitlab.clone",
+// Cloning, and forking first, take longer than the 30 seconds the daemon allows one plugin RPC, so
+// the work is started by one call and its progress collected by short polls.
+export const startCloneRpc = defineRpc({
+  name: "wukong.gitlab.clone.start",
   input: z.object({
     /** Full project path such as `group/sub/project`. */
     path: z.string(),
     /** Folder to clone into; defaults to the configured clone root. */
     parentDirectory: z.string().optional(),
+    /** Fork the project into the user's own namespace first and clone the fork. */
+    fork: z.boolean().optional(),
   }),
-  output: z.object({ directory: z.string(), workspaceId: z.string(), alreadyCloned: z.boolean() }),
+  output: z.object({ id: z.string() }),
+});
+
+export const CloneResultSchema = z.object({
+  directory: z.string(),
+  alreadyCloned: z.boolean(),
+  /** The project that was cloned: the fork's path when forking, otherwise the project's own. */
+  clonedPath: z.string(),
+  /** The original project when a fork was cloned; `upstream` points at it. */
+  forkedFrom: z.string().nullable(),
+});
+
+export type CloneResult = z.infer<typeof CloneResultSchema>;
+
+export const pollCloneRpc = defineRpc({
+  name: "wukong.gitlab.clone.poll",
+  input: z.object({ id: z.string() }),
+  output: z.object({
+    state: z.enum(["running", "done", "failed"]),
+    /** What the job is doing now, for display. */
+    step: z.string(),
+    result: CloneResultSchema.nullable(),
+    error: z.string().nullable(),
+  }),
 });
 
 // Choosing a folder takes longer than the 30 seconds the daemon allows one plugin RPC, so the
