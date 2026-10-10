@@ -72,6 +72,7 @@ installs, builds (including the web UI) and writes seven `wukong-*.tgz` files to
 is published. Takes about ten minutes the first time. Then follow `wukong/INSTALL-WINDOWS.md`.
 
 - Only committed work is included. Commit your changes first.
+- Tarballs of an earlier build in `--out` are removed first, so the folder always holds one build.
 - `--scope acme` builds `@acme/*` instead of `@wukong/*`; `--work-dir C:\wk` picks the build
   folder (keep it short on Windows); `--keep` leaves the folder in place.
 - `git config core.autocrlf` may be `true` on Windows; the build copes with CRLF.

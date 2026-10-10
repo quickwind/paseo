@@ -5,7 +5,7 @@
 // (commit first: uncommitted changes are not included).
 //
 // Usage: node wukong/scripts/pack-local.mjs --out <dir> [--scope wukong] [--work-dir <dir>] [--keep]
-//   --out       where the .tgz files go (required)
+//   --out       where the .tgz files go (required); tarballs of an earlier build there are removed
 //   --scope     npm scope, giving @<scope>/cli, @<scope>/server, ... (default: wukong)
 //   --work-dir  where the throwaway checkout lives. Keep it short on Windows (default: a
 //               short folder under the system temp directory)
@@ -55,6 +55,11 @@ export function buildStamp(date = new Date()) {
     `${date.getUTCFullYear()}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}` +
     `${pad(date.getUTCHours())}${pad(date.getUTCMinutes())}`
   );
+}
+
+/** A tarball of this scope from an earlier build, such as `wukong-cli-0.11.2-wukong.1.tgz`. */
+export function staleTarball(file, scope) {
+  return file.startsWith(`${scope}-`) && file.endsWith(".tgz");
 }
 
 const isWindows = process.platform === "win32";
@@ -148,6 +153,10 @@ export function main(argv) {
     }
 
     mkdirSync(out, { recursive: true });
+    // Tarballs of an earlier build in the same folder would be installed alongside the new ones.
+    for (const file of readdirSync(out)) {
+      if (staleTarball(file, args.scope)) rmSync(path.join(out, file), { force: true });
+    }
     const tarballs = readdirSync(packed).filter((file) => file.endsWith(".tgz"));
     for (const file of tarballs) cpSync(path.join(packed, file), path.join(out, file));
     process.stdout.write(`\nPacked ${version}: ${tarballs.length} tarballs in ${out}\n`);
