@@ -77,3 +77,28 @@ describe("Wukong settings and Add Project", () => {
     expect(methods.find((method) => method.id === "browse")?.label).toBe("Open folder");
   });
 });
+
+describe("pluginSourceField", () => {
+  const upstream = {
+    label: "Plugin source",
+    placeholder: "owner/slug or npm package",
+    trailing: "docs",
+  };
+
+  it("is upstream's field in an upstream build", async () => {
+    vi.resetModules();
+    const { pluginSourceField } = await import("./plugin-source-field");
+    expect(pluginSourceField(upstream)).toBe(upstream);
+  });
+
+  it("asks for a local folder and drops the docs link in a Wukong build", async () => {
+    vi.stubEnv("EXPO_PUBLIC_WUKONG", "1");
+    vi.resetModules();
+    const { pluginSourceField } = await import("./plugin-source-field");
+    expect(pluginSourceField(upstream)).toEqual({
+      label: "Plugin folder",
+      placeholder: "Path of a plugin folder on this machine",
+      trailing: undefined,
+    });
+  });
+});

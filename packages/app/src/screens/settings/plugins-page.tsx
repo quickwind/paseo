@@ -1,4 +1,5 @@
 import { formatPluginInstallation } from "@getpaseo/protocol/plugin-source-reference";
+import { pluginSourceField } from "@/wukong/plugin-source-field"; // Wukong
 import { PluginSettingsMenuItems } from "@/plugins/settings";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
@@ -293,6 +294,11 @@ export function HostPluginsPage({ serverId }: { serverId: string }) {
     ),
     [t],
   );
+  const sourceField = pluginSourceField({
+    label: t("settings.plugins.sourceLabel"),
+    placeholder: t("settings.plugins.sourcePlaceholder"),
+    trailing: sourceDocsLink,
+  }); // Wukong
   const [logsPluginId, setLogsPluginId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ kind: "success" | "error"; message: string } | null>(
     null,
@@ -493,16 +499,16 @@ export function HostPluginsPage({ serverId }: { serverId: string }) {
         </View>
         {sourceInstallSupported ? (
           <View style={[settingsStyles.card, styles.install]}>
-            <Field label={t("settings.plugins.sourceLabel")} trailing={sourceDocsLink}>
+            <Field label={sourceField.label} trailing={sourceField.trailing}>
               <FormTextInput
                 initialValue=""
                 resetKey={installState.resetKey}
                 onChangeText={installForm.setSource}
-                placeholder={t("settings.plugins.sourcePlaceholder")}
+                placeholder={sourceField.placeholder}
                 autoCapitalize="none"
                 autoCorrect={false}
                 editable={!mutation.isPending}
-                accessibilityLabel={t("settings.plugins.sourceLabel")}
+                accessibilityLabel={sourceField.label}
               />
             </Field>
             <Button onPress={install} disabled={!installState.canSubmit || mutation.isPending}>
