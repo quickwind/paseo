@@ -150,11 +150,11 @@ wukong plugin install D:\plugins\<plugin>
 internet:
 
 ```powershell
-Expand-Archive .\paseo-bots-0.2.0-offline.1.zip -DestinationPath D:\plugins
-wukong plugin install D:\plugins\paseo-bots-0.2.0-offline.1
+Expand-Archive .\paseo-bots-0.2.0-offline.2.zip -DestinationPath D:\plugins
+wukong plugin install D:\plugins\paseo-bots-0.2.0-offline.2
 ```
 
-Check the download first if you like: `(Get-FileHash .\paseo-bots-0.2.0-offline.1.zip).Hash` should equal the
+Check the download first if you like: `(Get-FileHash .\paseo-bots-0.2.0-offline.2.zip).Hash` should equal the
 hash in the `.sha256` file. Skills import from a folder on the machine, not from GitHub.
 
 ## Usage
