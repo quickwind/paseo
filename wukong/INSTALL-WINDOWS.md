@@ -169,6 +169,12 @@ CLI's `/usage` does. Run `devin auth login` first if the page says the CLI is no
   the daemon; Wukong's network guard opens the same hosts, so nothing else needs configuring.
 - Devin has no public API for this, so it may change. If the page reports that the API may have
   changed, tell the Wukong maintainers.
+- The bar resets on the first of each calendar month (UTC), not on the contract end date.
+- From the fourth day of a month a second row shows a month-end forecast from this month's pace:
+  ☀️ plenty of room, 🌤️ on track, ⛅ tight, 🌧️ likely over, ⛈️ well over. If you already pinned
+  the ACU bar to the sidebar, pin the forecast row too (click it on the Usage page). When the
+  pace would use the whole allowance early, the ACU bar says when it runs out.
+- Pinned usage refreshes by itself about every five and a half minutes.
 - Claude usage is not shown (Claude Code sign-in is not set up for it).
 
 ## Update or remove
