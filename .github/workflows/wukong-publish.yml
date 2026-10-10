@@ -136,6 +136,9 @@ jobs:
           version="${core}-wukong.${GITHUB_RUN_NUMBER}"
           npm pkg set version="$version"
           node scripts/sync-workspace-versions.mjs
+          # The app is not published, and its Expo config only accepts x.y.z or x.y.z-beta.N,
+          # so it keeps the upstream version.
+          npm pkg set version="$core" --workspace="@${NPM_SCOPE}/app"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Publishing version $version under @$NPM_SCOPE"
 
