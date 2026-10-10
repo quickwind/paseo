@@ -57,6 +57,25 @@ A glab-compatible runner (`packages/server/src/wukong/gitlab/glab-runner.ts`) an
 command lines that service issues with python-gitlab calls; no `glab` executable is involved. Not
 supported: rebase merges. The daemon's clone request clones only from this GitLab.
 
+## Building the packages yourself
+
+Needs Node.js 22+ and Git. Works the same on Windows (PowerShell or cmd), macOS and Linux:
+
+```sh
+git clone -b wukong https://github.com/quickwind/wukong.git
+cd wukong
+node wukong/scripts/pack-local.mjs --out ../wukong-dist
+```
+
+It checks out the last commit into a throwaway folder, applies the npm scope and the brand,
+installs, builds (including the web UI) and writes seven `wukong-*.tgz` files to `--out`. Nothing
+is published. Takes about ten minutes the first time. Then follow `wukong/INSTALL-WINDOWS.md`.
+
+- Only committed work is included. Commit your changes first.
+- `--scope acme` builds `@acme/*` instead of `@wukong/*`; `--work-dir C:\wk` picks the build
+  folder (keep it short on Windows); `--keep` leaves the folder in place.
+- `git config core.autocrlf` may be `true` on Windows; the build copes with CRLF.
+
 ## Publishing
 
 `wukong-publish.yml` runs on every push to `wukong`. It verifies, then (once `NPM_SCOPE` is set)

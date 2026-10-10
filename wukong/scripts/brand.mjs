@@ -28,7 +28,10 @@ const GUARDED_OVERLAYS = {
 // Files with no user-visible product name.
 const I18N_WITHOUT_NAME = new Set(["plugin-settings.ts"]);
 
-const sha256 = (buffer) => createHash("sha256").update(buffer).digest("hex");
+// Hashes the text with LF line endings: Git for Windows checks files out with CRLF by default,
+// and that must not read as an upstream change.
+const sha256 = (buffer) =>
+  createHash("sha256").update(buffer.toString("utf8").replaceAll("\r\n", "\n")).digest("hex");
 
 function listOverlayFiles(directory = OVERLAY_ROOT) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {

@@ -11,6 +11,19 @@ Wukong is installed from seven npm tarballs (`wukong-*.tgz`). They must be insta
   `pip install python-gitlab` (or `uv tool install python-gitlab`), then set up
   `%USERPROFILE%\.python-gitlab.cfg` as you normally would.
 
+## Build the tarballs yourself (optional)
+
+Instead of receiving the files, build them from the repository:
+
+```powershell
+git clone -b wukong https://github.com/quickwind/wukong.git
+cd wukong
+node wukong/scripts/pack-local.mjs --out ..\wukong-dist
+```
+
+This takes about ten minutes the first time and leaves the seven `wukong-*.tgz` files in
+`..\wukong-dist`. Commit first if you changed anything: only committed work is built.
+
 ## Install
 
 Open PowerShell in the folder that holds the seven `.tgz` files.

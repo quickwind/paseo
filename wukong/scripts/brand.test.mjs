@@ -71,3 +71,11 @@ test("fails loudly when a text target loses the name", () => {
   writeFileSync(path.join(root, "packages/app/public/manifest.json"), '{"id":"/"}\n');
   assert.throws(() => applyBrand({ root }), /found nothing to replace in .*manifest\.json/);
 });
+
+test("a Windows checkout with CRLF line endings is not an upstream change", () => {
+  const root = copyTree();
+  const logo = path.join(root, "packages/app/src/components/icons/paseo-logo.tsx");
+  writeFileSync(logo, readFileSync(logo, "utf8").replaceAll("\n", "\r\n"));
+  applyBrand({ root });
+  assert.match(read(root, "packages/app/src/components/icons/paseo-logo.tsx"), /WUKONG_LOGO/);
+});
