@@ -57,4 +57,20 @@ describe("Wukong GitLab forge", () => {
       loadGitLabForgeConfig(home, { WUKONG_GITLAB_URL: "http://plain.example" }),
     ).toThrow(/https/);
   });
+
+  it("accepts the documented file, including cloneRoot, with or without a UTF-8 BOM", () => {
+    const home = mkdtempSync(join(tmpdir(), "wukong-"));
+    const documented = {
+      gitlab: {
+        url: "https://gitlab.corp.example",
+        configSection: "corp",
+        cloneRoot: "D:\\projects",
+      },
+    };
+    writeFileSync(join(home, "wukong.json"), JSON.stringify(documented));
+    expect(loadGitLabForgeConfig(home, {})).toMatchObject({ configSection: "corp" });
+    // Windows PowerShell and older Notepad write UTF-8 with a byte order mark.
+    writeFileSync(join(home, "wukong.json"), `\uFEFF${JSON.stringify(documented)}`);
+    expect(loadGitLabForgeConfig(home, {})?.url).toBe("https://gitlab.corp.example");
+  });
 });

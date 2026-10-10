@@ -33,7 +33,16 @@ export function folderDialogCommands(platform: NodeJS.Platform, title: string): 
     return [
       {
         file: "powershell.exe",
-        args: ["-NoProfile", "-NonInteractive", "-STA", "-EncodedCommand", encoded],
+        // -WindowStyle Hidden hides only PowerShell's own console, not the folder dialog.
+        args: [
+          "-NoProfile",
+          "-NonInteractive",
+          "-STA",
+          "-WindowStyle",
+          "Hidden",
+          "-EncodedCommand",
+          encoded,
+        ],
       },
     ];
   }
@@ -70,7 +79,8 @@ const defaultExec: Exec = (file, args) =>
     execFile(
       file,
       args,
-      { timeout: DIALOG_TIMEOUT_MS, windowsHide: true, maxBuffer: 1024 * 1024 },
+      // No windowsHide: on Windows it hides the dialog's window as well as the console.
+      { timeout: DIALOG_TIMEOUT_MS, maxBuffer: 1024 * 1024 },
       (error, stdout) => {
         const code = (error as NodeJS.ErrnoException | null)?.code ?? null;
         resolve({ stdout, code, missing: code === "ENOENT" });

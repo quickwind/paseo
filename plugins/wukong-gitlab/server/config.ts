@@ -21,7 +21,9 @@ export function expandHome(input: string): string {
 
 function readFile(paseoHome: string): Record<string, unknown> {
   try {
-    const parsed: unknown = JSON.parse(readFileSync(join(paseoHome, "wukong.json"), "utf8"));
+    const parsed: unknown = JSON.parse(
+      readFileSync(join(paseoHome, "wukong.json"), "utf8").replace(/^\uFEFF/u, ""),
+    );
     const gitlab = (parsed as { gitlab?: unknown } | null)?.gitlab;
     return gitlab && typeof gitlab === "object" ? (gitlab as Record<string, unknown>) : {};
   } catch (error) {

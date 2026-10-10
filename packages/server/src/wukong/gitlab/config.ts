@@ -75,6 +75,8 @@ export const GitLabForgeConfigSchema = z
       .array(z.string().min(1, "gitlab.command entries must not be empty"))
       .min(1, "gitlab.command must name an executable")
       .optional(),
+    // Read by the bundled GitLab plugin; accepted here so one wukong.json serves both.
+    cloneRoot: z.string().trim().min(1).optional(),
   })
   .strict();
 
@@ -149,7 +151,9 @@ export function loadGitLabForgeConfig(
 ): GitLabForgeConfig | null {
   let fileConfig: Record<string, unknown> = {};
   try {
-    const parsed: unknown = JSON.parse(readFileSync(join(paseoHome, FILE_NAME), "utf8"));
+    const parsed: unknown = JSON.parse(
+      readFileSync(join(paseoHome, FILE_NAME), "utf8").replace(/^\uFEFF/u, ""),
+    );
     const gitlab = (parsed as { gitlab?: unknown } | null)?.gitlab;
     if (gitlab && typeof gitlab === "object") {
       fileConfig = gitlab as Record<string, unknown>;

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -16,6 +17,14 @@ describe("folderDialogCommands", () => {
     );
     const encoded = command?.args.at(-1) ?? "";
     expect(Buffer.from(encoded, "base64").toString("utf16le")).toContain("FolderBrowserDialog");
+  });
+
+  it("hides only PowerShell's console, never the dialog, and does not set windowsHide", () => {
+    const [command] = folderDialogCommands("win32", "t");
+    expect(command?.args).toEqual(expect.arrayContaining(["-WindowStyle", "Hidden"]));
+    expect(readFileSync(new URL("./pick-folder.ts", import.meta.url), "utf8")).not.toMatch(
+      /windowsHide:\s*true/,
+    );
   });
 
   it("quotes a title with an apostrophe in the PowerShell script", () => {

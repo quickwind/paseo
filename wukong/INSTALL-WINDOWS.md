@@ -65,25 +65,49 @@ The log is `%USERPROFILE%\.wukong\daemon.log`.
 
 ## Connect GitLab (optional)
 
-Create `%USERPROFILE%\.wukong\wukong.json`. Escape backslashes in JSON:
+Two files, both in your user folder.
+
+**1. `%USERPROFILE%\.python-gitlab.cfg`**: python-gitlab's own settings, with your token. Wukong
+never sees the token.
+
+```ini
+[global]
+default = corp
+
+[corp]
+url = https://gitlab.your-company.com
+private_token = <your personal access token, scope: api>
+api_version = 4
+```
+
+Check it works before going further: `gitlab -g corp current-user get` should print your user.
+
+**2. `%USERPROFILE%\.wukong\wukong.json`**: tells Wukong which GitLab and which section.
+Escape backslashes in JSON.
 
 ```json
 {
   "gitlab": {
     "url": "https://gitlab.your-company.com",
-    "configSection": "your-python-gitlab-section",
+    "configSection": "corp",
     "cloneRoot": "D:\\projects"
   }
 }
 ```
 
-Then run `wukong daemon stop` and `wukong daemon start` again. `configSection` is the section name in your
-`.python-gitlab.cfg`; leave it out to use the default section.
+- `url` must be https and the same server as in `.python-gitlab.cfg`.
+- `configSection` is the section name above; leave it out to use `[global] default`.
+- `cloneRoot` is where "Clone from GitLab" puts projects (default `%USERPROFILE%\projects`).
+- `sshHost` (optional, `host` or `host:port`) clones over ssh instead of https.
+
+Then run `wukong daemon stop` and `wukong daemon start`. The file may be saved with or without a
+byte order mark.
 
 ## What to try
 
 1. **Open folder.** Add project, then **Open folder**: the Windows folder dialog should appear.
-   If it does not, look for it behind the browser window.
+   If nothing appears, open `%USERPROFILE%\.wukong\daemon.log` and look for lines starting with
+   `[wukong-gitlab] folder dialog`: they say whether the dialog was started and how it ended.
 2. **Search for directory.** Add project, then **Search for directory**, and type a path such as
    `D:\`.
 3. **A Claude Code agent.** Open a project, start a chat, send a message.
