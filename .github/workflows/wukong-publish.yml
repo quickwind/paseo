@@ -45,7 +45,7 @@ jobs:
       # The brand tests include a dry run against the real tree: they fail when an upstream
       # sync moves something the brand replaces.
       - name: Brand and release script tests
-        run: node --test wukong/scripts
+        run: node --test "wukong/scripts/*.test.mjs"
 
       # --ignore-scripts skips native builds; the root postinstall applies patches/ that the
       # web UI requires.

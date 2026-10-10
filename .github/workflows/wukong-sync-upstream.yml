@@ -87,7 +87,7 @@ jobs:
       - name: Brand, build and verify the merge
         if: steps.merge.outputs.state == 'merged'
         run: |
-          node --test wukong/scripts
+          node --test "wukong/scripts/*.test.mjs"
           node scripts/npm-retry.mjs ci --ignore-scripts --no-audit --no-fund
           npm run postinstall
           npm run build:server
