@@ -123,6 +123,26 @@ byte order mark.
 If something fails, send the text of the error and the last lines of
 `%USERPROFILE%\.wukong\daemon.log`.
 
+## Plugins
+
+Plugins written for Paseo work in Wukong, but they install from a **local folder only**: not from
+npm, GitHub or a registry (`wukong plugin install npm:...` and `github:...` are refused).
+
+```powershell
+git clone https://github.com/<owner>/<plugin> D:\plugins\<plugin>
+git -C D:\plugins\<plugin> checkout <commit you reviewed>
+wukong plugin install D:\plugins\<plugin>
+```
+
+- Turn on **Settings > Plugins > Enable plugins** first. `install` and `add` are the same command.
+- Plugin code is not sandboxed. Read it before installing and pin the commit you read.
+- Wukong stops its own daemon from sending data to the internet, but **a plugin runs in its own
+  process, outside that guard**, and may contact whatever it likes (for example a cloud API you give
+  it a key for). Install only plugins you trust, and do not give them keys for services you do not
+  want your data to reach.
+- Only Claude Code and Devin CLI exist as providers, so a plugin that adds a provider has no effect.
+- Plugins that bundle upstream's own extras (usage readers, other providers) are not included.
+
 ## Update or remove
 
 To update, run the same install command with the newer tarballs, then restart the daemon.

@@ -20,3 +20,12 @@ export function wukongBuiltinPlugins(
 ): BuiltinPluginLoader | undefined {
   return isWukongActive() ? new BuiltinPluginLoader(undefined, WUKONG_BUILTIN_PLUGINS) : loader;
 }
+
+/** What to tell a user whose install needs plugin source management, which Wukong turns off. */
+export function pluginSourcesUnavailableMessage(upstreamMessage: string): string {
+  return isWukongActive()
+    ? "Wukong installs plugins from a local folder only, not from npm, GitHub or a registry. " +
+        "Get the plugin's source onto this machine (for example with git clone), then run: " +
+        "wukong plugin install <folder>"
+    : upstreamMessage;
+}

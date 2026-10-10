@@ -25,7 +25,11 @@ import { expandTilde } from "../../utils/path.js";
 import { runPluginBuild } from "./preparation.js";
 import { PluginRuntime } from "./runtime.js";
 import { BuiltinPluginLoader, type BuiltinPlugin } from "./builtin/index.js";
-import { wukongBuiltinPlugins, wukongManagedSources } from "../../wukong/plugins.js"; // Wukong
+import {
+  pluginSourcesUnavailableMessage,
+  wukongBuiltinPlugins,
+  wukongManagedSources,
+} from "../../wukong/plugins.js"; // Wukong
 import type { PluginProviderMetadata } from "./plugin-process-protocol.js";
 import { readPluginProviderIcon } from "./provider-icon.js";
 import {
@@ -770,7 +774,9 @@ export class PluginService {
   }
 
   private requireManagedSources(): ManagedPluginSources {
-    if (!this.managedSources) throw new Error("Plugin source management is unavailable");
+    if (!this.managedSources) {
+      throw new Error(pluginSourcesUnavailableMessage("Plugin source management is unavailable")); // Wukong
+    }
     return this.managedSources;
   }
 
