@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { HIDDEN_ROW_STYLE, WUKONG_BUILD } from "@/wukong/build"; // Wukong
 import type { ComponentType, ReactNode } from "react";
 import {
   Alert,
@@ -421,7 +422,7 @@ function DiagnosticsSection({
             {t("settings.diagnostics.app.run")}
           </Button>
         </View>
-        <View style={settingsStyles.row}>
+        <View style={WUKONG_BUILD ? HIDDEN_ROW_STYLE : settingsStyles.row}>
           <View style={settingsStyles.rowContent}>
             <Text style={settingsStyles.rowTitle}>{t("settings.diagnostics.testAudio")}</Text>
             {playbackTestResult ? (
