@@ -14,3 +14,10 @@ const Hidden = () => null;
 export function upstreamOnly<Component>(component: Component): Component {
   return WUKONG_BUILD ? (Hidden as Component) : component;
 }
+
+/** Host settings sections Wukong does not offer: pairing goes through the relay, usage reads vendor APIs. */
+const HIDDEN_HOST_SECTIONS: ReadonlySet<string> = new Set(["pair-device", "usage"]);
+
+export function isHostSectionOffered(section: string): boolean {
+  return !(WUKONG_BUILD && HIDDEN_HOST_SECTIONS.has(section));
+}

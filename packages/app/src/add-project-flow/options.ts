@@ -4,6 +4,7 @@ import {
   parseGitRemoteLocation,
 } from "@getpaseo/protocol/git-remote";
 import { shortenPath } from "@/utils/shorten-path";
+import { WUKONG_BUILD } from "@/wukong/build"; // Wukong
 import type { AddProjectHost, GithubRepositoryChoice } from "./model";
 
 export type AddProjectMethodId = "directory-search" | "browse" | "github" | "new-directory";
@@ -50,9 +51,11 @@ export function buildAddProjectMethods(host: AddProjectHost): AddProjectMethodOp
   }
   options.push({
     id: "github",
-    label: "Clone from GitHub",
-    description: githubMethodDescription(host),
-    disabled: !host.canCloneGithubRepositories,
+    label: WUKONG_BUILD ? "Clone from GitLab" : "Clone from GitHub", // Wukong
+    description: WUKONG_BUILD
+      ? "Search projects in your company GitLab"
+      : githubMethodDescription(host),
+    disabled: WUKONG_BUILD ? false : !host.canCloneGithubRepositories,
   });
   options.push({
     id: "new-directory",

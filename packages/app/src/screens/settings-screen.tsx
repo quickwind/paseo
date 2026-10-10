@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { HIDDEN_ROW_STYLE, WUKONG_BUILD } from "@/wukong/build"; // Wukong
+import { HIDDEN_ROW_STYLE, WUKONG_BUILD, isHostSectionOffered } from "@/wukong/build"; // Wukong
 import type { ComponentType, ReactNode } from "react";
 import {
   Alert,
@@ -240,6 +240,8 @@ const HOST_SECTION_ITEMS: HostSectionItem[] = [
   { id: "terminals", labelKey: "settings.hostSections.terminals", icon: SquareTerminal },
   { id: "plugins", labelKey: "settings.hostSections.plugins", icon: Blocks },
 ];
+
+const isOfferedHostSection = (item: HostSectionItem) => isHostSectionOffered(item.id); // Wukong
 
 function renderHostSettingsContent(
   view: Extract<SettingsView, { kind: "host" }>,
@@ -985,7 +987,8 @@ function SettingsSidebar({
             onAddHost={onAddHost}
             enableBuiltInDaemonOption={enableBuiltInDaemonOption}
           />
-          {HOST_SECTION_ITEMS.map((item) => (
+          {HOST_SECTION_ITEMS.filter(isOfferedHostSection).map((item) => (
+            // Wukong
             <SidebarHostSectionButton
               key={item.id}
               itemId={item.id}
