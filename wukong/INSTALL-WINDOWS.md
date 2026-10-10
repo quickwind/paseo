@@ -37,6 +37,10 @@ wukong --version
 
 `wukong --version` should print `0.11.2-wukong.<number>`.
 
+The script `windows-update.ps1` (next to this file, and in `wukong/scripts/` of the source) does the
+whole install or update in one go: it stops the daemon, removes the old packages, installs the seven
+tarballs, and starts the daemon again. See [Update or remove](#update-or-remove).
+
 ## First run
 
 ```powershell
@@ -196,7 +200,29 @@ CLI's `/usage` does. Run `devin auth login` first if the page says the CLI is no
 
 ## Update or remove
 
-To update, run the same install command with the newer tarballs, then restart the daemon.
+To update, put the new tarballs in a folder and run the script from there:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\windows-update.ps1
+powershell -ExecutionPolicy Bypass -File .\windows-update.ps1 -Path D:\wukong-dist   # tarballs elsewhere
+powershell -ExecutionPolicy Bypass -File .\windows-update.ps1 -DryRun                 # only print the steps
+```
+
+It runs these steps, which you can also type by hand:
+
+```powershell
+wukong daemon stop        # a running daemon locks its files on Windows
+npm uninstall -g @wukong/cli @wukong/server @wukong/client @wukong/protocol @wukong/relay @wukong/plugin @wukong/highlight
+$env:ONNXRUNTIME_NODE_INSTALL = "skip"   # this window only; skips a large voice download Wukong does not use
+$files = (Get-ChildItem .\wukong-*.tgz).FullName
+npm install -g $files     # all seven together, so npm never fetches upstream packages
+wukong daemon start       # hidden, returns when ready
+```
+
+Stopping the daemon first matters most. The uninstall is a precaution against leftover files, and
+the `ONNXRUNTIME_NODE_INSTALL` line only avoids a slow download; neither is required. On a first
+install there is nothing to stop or remove, and the script carries on past those two steps. It stops
+at once if the install itself fails, so a broken install never starts the daemon.
 
 ```powershell
 npm uninstall -g @wukong/cli @wukong/server @wukong/client @wukong/protocol @wukong/relay @wukong/plugin @wukong/highlight
