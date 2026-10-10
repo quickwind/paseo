@@ -44,11 +44,11 @@ describe("Wukong settings and Add Project", () => {
     expect(isHostSectionOffered("usage")).toBe(true);
   });
 
-  it("hides pairing and usage but keeps the rest in a Wukong build", async () => {
+  it("hides pairing but keeps usage and the rest in a Wukong build", async () => {
     vi.stubEnv("EXPO_PUBLIC_WUKONG", "1");
     const { isHostSectionOffered } = await load();
     expect(isHostSectionOffered("pair-device")).toBe(false);
-    expect(isHostSectionOffered("usage")).toBe(false);
+    expect(isHostSectionOffered("usage")).toBe(true);
     for (const section of ["projects", "connections", "providers", "plugins"]) {
       expect(isHostSectionOffered(section)).toBe(true);
     }

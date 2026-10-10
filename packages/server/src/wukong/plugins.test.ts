@@ -29,8 +29,11 @@ describe("Wukong plugins", () => {
       expect(wukongManagedSources(sources)).toBeUndefined();
     });
 
-    it("starts only Wukong's own bundled plugin", () => {
-      expect([...(wukongBuiltinPlugins(loader)?.ids ?? [])]).toEqual(["wukong-gitlab"]);
+    it("starts only Wukong's own bundled plugins", () => {
+      expect([...(wukongBuiltinPlugins(loader)?.ids ?? [])]).toEqual([
+        "wukong-gitlab",
+        "wukong-devin-usage",
+      ]);
     });
   });
 

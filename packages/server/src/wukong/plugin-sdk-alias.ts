@@ -7,7 +7,7 @@
 // unrenamed source tree both names are the same and nothing is mapped.
 
 const LOCAL_SDK = "@getpaseo/plugin";
-const UPSTREAM_SDK = "@get" + "paseo/plugin";
+const UPSTREAM_SDK = ["@get", "paseo/plugin"].join("");
 
 export function createSdkAlias(local: string, upstream: string) {
   const same = local === upstream;
