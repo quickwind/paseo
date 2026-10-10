@@ -123,7 +123,7 @@ jobs:
       # The script anyone can run to build the packages themselves (see wukong/README.md),
       # run for real on Windows. A short work dir keeps node_modules under the 260-character limit.
       - name: Pack the tarballs
-        run: node wukong/scripts/pack-local.mjs --out dist-npm --work-dir C:\\wk
+        run: node wukong/scripts/pack-local.mjs --out dist-npm --work-dir C:\wk
 
       - name: Keep the Windows-built tarballs
         uses: actions/upload-artifact@v4
