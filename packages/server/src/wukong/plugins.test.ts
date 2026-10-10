@@ -25,8 +25,8 @@ describe("Wukong plugins", () => {
       expect(wukongManagedSources(sources)).toBeUndefined();
     });
 
-    it("starts no bundled plugins", () => {
-      expect(wukongBuiltinPlugins(loader)?.ids.size).toBe(0);
+    it("starts only Wukong's own bundled plugin", () => {
+      expect([...(wukongBuiltinPlugins(loader)?.ids ?? [])]).toEqual(["wukong-gitlab"]);
     });
   });
 });
