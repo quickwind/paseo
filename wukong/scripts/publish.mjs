@@ -38,6 +38,8 @@ function parseArgs(argv) {
     else throw new Error(`Unknown argument: ${arg}`);
   }
   if (!args.dir || !existsSync(args.dir)) throw new Error("--dir must be an existing directory");
+  // npm reads `dir/file.tgz` as a GitHub `owner/repo` shorthand; only an absolute path is a file.
+  args.dir = path.resolve(args.dir);
   if (!args.scope) throw new Error("--scope is required");
   if (args.scope === "getpaseo") throw new Error("Refusing to publish under the upstream scope");
   if (!["public", "restricted"].includes(args.access)) {
