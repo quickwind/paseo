@@ -157,6 +157,20 @@ wukong plugin install D:\plugins\paseo-bots-0.2.0-offline.1
 Check the download first if you like: `(Get-FileHash .\paseo-bots-0.2.0-offline.1.zip).Hash` should equal the
 hash in the `.sha256` file. Skills import from a folder on the machine, not from GitHub.
 
+## Usage
+
+**Settings -> Usage** shows your Devin ACU for the billing period (for example `9.31 / 30`), with a
+bar that turns amber from 80% and red from 95%. The numbers come from the Devin CLI's own login:
+Wukong reads `%APPDATA%\devin\credentials.toml` and asks Devin's server the same question the
+CLI's `/usage` does. Run `devin auth login` first if the page says the CLI is not signed in.
+
+- The login is only ever sent to `server.codeium.com` or `api.devin.ai` over https. If your company
+  uses another Devin host, add it with `WUKONG_DEVIN_API_HOSTS` (comma separated) before starting
+  the daemon.
+- Devin has no public API for this, so it may change. If the page reports that the API may have
+  changed, tell the Wukong maintainers.
+- Claude usage is not shown (Claude Code sign-in is not set up for it).
+
 ## Update or remove
 
 To update, run the same install command with the newer tarballs, then restart the daemon.
