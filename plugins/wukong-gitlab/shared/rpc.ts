@@ -32,9 +32,21 @@ export const cloneProjectRpc = defineRpc({
   output: z.object({ directory: z.string(), workspaceId: z.string(), alreadyCloned: z.boolean() }),
 });
 
-export const pickFolderRpc = defineRpc({
-  name: "wukong.pick-folder",
+// Choosing a folder takes longer than the 30 seconds the daemon allows one plugin RPC, so the
+// dialog is started by one call and its result collected by short polls.
+export const startPickFolderRpc = defineRpc({
+  name: "wukong.pick-folder.start",
   input: z.object({ title: z.string().max(200).optional() }),
-  /** `null` when the user cancels the dialog. */
-  output: z.object({ path: z.string().nullable() }),
+  output: z.object({ id: z.string() }),
+});
+
+export const pollPickFolderRpc = defineRpc({
+  name: "wukong.pick-folder.poll",
+  input: z.object({ id: z.string() }),
+  output: z.object({
+    state: z.enum(["pending", "done", "failed"]),
+    /** The chosen folder when `done`; `null` if the user cancelled. */
+    path: z.string().nullable(),
+    error: z.string().nullable(),
+  }),
 });

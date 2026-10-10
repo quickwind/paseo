@@ -12,17 +12,31 @@ export interface DialogCommand {
 }
 
 export function windowsDialogScript(title: string): string {
-  const quoted = title.replaceAll("'", "''");
+  // PowerShell reads the typographic single quotes (U+2018 to U+201B) as quotes too.
+  const quoted = title.replace(/['\u2018\u2019\u201A\u201B]/gu, (quote) => quote + quote);
   return [
     "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8",
     "Add-Type -AssemblyName System.Windows.Forms",
-    // A topmost, invisible owner keeps the dialog in front of the browser window.
+    "Add-Type -AssemblyName System.Drawing",
+    "[System.Windows.Forms.Application]::EnableVisualStyles()",
+    // The owner must be a shown, topmost window. A dialog owned by a window that was never shown
+    // opens behind the browser with no taskbar button, so it looks like nothing happened. The
+    // owner is a transparent 1x1 pixel in the middle of the screen.
     "$owner = New-Object System.Windows.Forms.Form",
     "$owner.TopMost = $true",
+    "$owner.ShowInTaskbar = $false",
+    "$owner.FormBorderStyle = 'None'",
+    "$owner.StartPosition = 'CenterScreen'",
+    "$owner.Opacity = 0",
+    "$owner.Size = New-Object System.Drawing.Size(1, 1)",
+    "$owner.Show()",
+    "$owner.Activate()",
     "$dialog = New-Object System.Windows.Forms.FolderBrowserDialog",
     `$dialog.Description = '${quoted}'`,
     "$dialog.ShowNewFolderButton = $true",
-    "if ($dialog.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write($dialog.SelectedPath) }",
+    "$result = $dialog.ShowDialog($owner)",
+    "$owner.Close()",
+    "if ($result -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write($dialog.SelectedPath) }",
   ].join("; ");
 }
 
@@ -34,15 +48,7 @@ export function folderDialogCommands(platform: NodeJS.Platform, title: string): 
       {
         file: "powershell.exe",
         // -WindowStyle Hidden hides only PowerShell's own console, not the folder dialog.
-        args: [
-          "-NoProfile",
-          "-NonInteractive",
-          "-STA",
-          "-WindowStyle",
-          "Hidden",
-          "-EncodedCommand",
-          encoded,
-        ],
+        args: ["-NoProfile", "-STA", "-WindowStyle", "Hidden", "-EncodedCommand", encoded],
       },
     ];
   }
@@ -69,10 +75,14 @@ export function parseDialogOutput(stdout: string, platform: NodeJS.Platform): st
   return !isRoot && platform === "darwin" ? trimmed.replace(/\/+$/u, "") : trimmed;
 }
 
-type Exec = (
-  file: string,
-  args: string[],
-) => Promise<{ stdout: string; code: number | string | null; missing: boolean }>;
+interface ExecResult {
+  stdout: string;
+  stderr: string;
+  code: number | string | null;
+  missing: boolean;
+}
+
+type Exec = (file: string, args: string[]) => Promise<ExecResult>;
 
 const defaultExec: Exec = (file, args) =>
   new Promise((resolve) => {
@@ -81,12 +91,19 @@ const defaultExec: Exec = (file, args) =>
       args,
       // No windowsHide: on Windows it hides the dialog's window as well as the console.
       { timeout: DIALOG_TIMEOUT_MS, maxBuffer: 1024 * 1024 },
-      (error, stdout) => {
+      (error, stdout, stderr) => {
         const code = (error as NodeJS.ErrnoException | null)?.code ?? null;
-        resolve({ stdout, code, missing: code === "ENOENT" });
+        resolve({ stdout, stderr, code, missing: code === "ENOENT" });
       },
     );
   });
+
+/** Cancelling shows up as a non-zero exit (osascript: -128, zenity: 1); anything else is a failure. */
+function failureMessage(result: ExecResult): string | null {
+  const stderr = result.stderr.trim();
+  if (!result.code || !stderr || /cancel|-128/iu.test(stderr)) return null;
+  return stderr.split(/\r?\n/u)[0] ?? stderr;
+}
 
 export async function pickFolder(
   title = "Choose a folder",
@@ -96,7 +113,8 @@ export async function pickFolder(
   for (const command of folderDialogCommands(platform, title)) {
     const result = await exec(command.file, command.args);
     if (result.missing) continue;
-    // Cancelling exits non-zero (osascript, zenity) or prints nothing (PowerShell).
+    const failure = failureMessage(result);
+    if (failure) throw new Error(failure);
     return parseDialogOutput(result.stdout, platform);
   }
   throw new Error(
