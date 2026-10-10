@@ -5,6 +5,7 @@ import { assertCloneAllowed } from "./clone-policy.js";
 
 const config = { url: "https://gitlab.corp.example", sshHost: "git.corp.example:2222" };
 const getConfig = () => config;
+const noConfig = () => null;
 
 describe("assertCloneAllowed", () => {
   let deactivate: (() => void) | undefined;
@@ -41,7 +42,7 @@ describe("assertCloneAllowed", () => {
 
   it("explains when GitLab is not configured", () => {
     deactivate = activateWukongPolicy();
-    expect(() => assertCloneAllowed("https://github.com/o/r.git", () => null)).toThrow(
+    expect(() => assertCloneAllowed("https://github.com/o/r.git", noConfig)).toThrow(
       /not configured/,
     );
   });
