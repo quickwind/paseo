@@ -224,6 +224,10 @@ the `ONNXRUNTIME_NODE_INSTALL` line only avoids a slow download; neither is requ
 install there is nothing to stop or remove, and the script carries on past those two steps. It stops
 at once if the install itself fails, so a broken install never starts the daemon.
 
+To remove Wukong completely, stop the daemon and uninstall the packages (your data stays in
+`%USERPROFILE%\.wukong`):
+
 ```powershell
+wukong daemon stop
 npm uninstall -g @wukong/cli @wukong/server @wukong/client @wukong/protocol @wukong/relay @wukong/plugin @wukong/highlight
 ```
