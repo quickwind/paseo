@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { runClone, search } from "./projects.js";
+import { forgetUsernames, runClone, search } from "./projects.js";
 
 const GITLAB = "https://gitlab.test";
 const noop = () => {};
@@ -30,6 +30,8 @@ interface FakeState {
   username: string;
   list: unknown[];
   projects: Record<string, FakeProject>;
+  /** `current-user get` fails, as when the token is wrong. */
+  noUser?: boolean;
   importPolls: number;
   calls: string[];
 }
@@ -51,7 +53,7 @@ const view = (p) => ({
   import_error: p.fail ?? null,
 });
 const fail = (message) => { save(); console.error(message); process.exit(1); };
-if (command === "current-user get") { save(); console.log(JSON.stringify({ id: 1, username: state.username })); }
+if (command === "current-user get") { if (state.noUser) fail("401 Unauthorized"); save(); console.log(JSON.stringify({ id: 1, username: state.username })); }
 else if (command === "project list") { save(); console.log(JSON.stringify(state.list)); }
 else if (command === "project get") {
   const project = state.projects[flag("id")];
@@ -122,6 +124,7 @@ beforeEach(() => {
     JSON.stringify({ gitlab: { command: [process.execPath, script] } }),
   );
   seed();
+  forgetUsernames();
 
   process.env.PASEO_HOME = home;
   process.env.FAKE_GL_STATE = statePath;
@@ -138,7 +141,7 @@ afterEach(() => {
 });
 
 describe("search", () => {
-  it("lists projects with whether they are a team project or a fork", async () => {
+  it("offers Fork clone for every project that is not the user's own", async () => {
     seed({
       list: [
         {
@@ -148,22 +151,47 @@ describe("search", () => {
           web_url: `${GITLAB}/group/app`,
           namespace: { kind: "group" },
         },
+        // A colleague's personal project, shared with the user.
+        { path_with_namespace: "alice/shared", name: "shared", namespace: { kind: "user" } },
+        // The user's own project and the user's own fork.
+        { path_with_namespace: "me/mine", name: "mine", namespace: { kind: "user" } },
         {
           path_with_namespace: "me/app",
           name: "app",
           namespace: { kind: "user" },
           forked_from_project: { path_with_namespace: "group/app" },
         },
-        { path_with_namespace: "x/y", name: "y" },
       ],
     });
     const result = await search({ query: "app" });
     expect(result.cloneRoot).toBe(join(work, "clones"));
-    expect(result.projects.map((p) => [p.path, p.namespaceKind, p.forkedFrom])).toEqual([
-      ["group/app", "group", null],
-      ["me/app", "user", "group/app"],
-      ["x/y", null, null],
+    expect(result.projects.map((p) => [p.path, p.namespaceKind, p.forkedFrom, p.canFork])).toEqual([
+      ["group/app", "group", null, true],
+      ["alice/shared", "user", null, true],
+      ["me/mine", "user", null, false],
+      ["me/app", "user", "group/app", false],
     ]);
+  });
+
+  it("falls back to team projects only when GitLab will not say who the user is", async () => {
+    seed({
+      noUser: true,
+      list: [
+        { path_with_namespace: "group/app", name: "app", namespace: { kind: "group" } },
+        { path_with_namespace: "alice/shared", name: "shared", namespace: { kind: "user" } },
+      ],
+    });
+    const result = await search({ query: "" });
+    expect(result.projects.map((p) => [p.path, p.canFork])).toEqual([
+      ["group/app", true],
+      ["alice/shared", false],
+    ]);
+  });
+
+  it("asks who the user is once, not on every search", async () => {
+    await search({ query: "a" });
+    await search({ query: "b" });
+    expect(readState().calls.filter((c) => c === "current-user get")).toHaveLength(1);
   });
 
   it("asks python-gitlab for the full record of the user's projects, escaping a query like @file", async () => {
@@ -321,5 +349,18 @@ describe("fork clone", () => {
     await expect(
       runClone({ path: "group/app", fork: true }, noop, { ...instant, forkTimeoutMs: 20 }),
     ).rejects.toThrow(/still building/);
+  });
+
+  it("forks a colleague's personal project the same way", async () => {
+    bareRepoWithCommit("alice/shared");
+    bareRepoWithCommit("me/shared");
+    seed({
+      projects: {
+        "alice/shared": { path_with_namespace: "alice/shared", namespace: { kind: "user" } },
+      },
+    });
+    const result = await runClone({ path: "alice/shared", fork: true }, noop, instant);
+    expect(result).toMatchObject({ clonedPath: "me/shared", forkedFrom: "alice/shared" });
+    expect(git(result.directory, "remote", "get-url", "upstream")).toMatch(/alice\/shared\.git$/);
   });
 });

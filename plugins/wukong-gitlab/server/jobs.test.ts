@@ -19,16 +19,33 @@ describe("jobs", () => {
     );
     expect(jobs.poll(id)).toEqual({
       state: "running",
-      step: "Starting…",
+      steps: ["Starting…"],
       result: null,
       error: null,
     });
     say("Halfway");
-    expect(jobs.poll(id).step).toBe("Halfway");
+    expect(jobs.poll(id).steps).toEqual(["Starting…", "Halfway"]);
     finish("ok");
     await tick();
-    expect(jobs.poll(id)).toEqual({ state: "done", step: "Halfway", result: "ok", error: null });
+    expect(jobs.poll(id)).toEqual({
+      state: "done",
+      steps: ["Starting…", "Halfway"],
+      result: "ok",
+      error: null,
+    });
     expect(jobs.poll(id).state).toBe("done");
+  });
+
+  it("keeps every step in order and does not repeat the one it is already on", async () => {
+    const jobs = createJobs<string>();
+    const id = jobs.start(async (report) => {
+      report("Forking…");
+      report("Forking…");
+      report("Cloning…");
+      return "ok";
+    }, "Forking…");
+    await tick();
+    expect(jobs.poll(id).steps).toEqual(["Forking…", "Cloning…"]);
   });
 
   it("reports a failure with its message", async () => {

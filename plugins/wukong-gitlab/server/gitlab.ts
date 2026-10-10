@@ -75,10 +75,26 @@ function gitlab(settings: GitLabSettings, args: string[]): Promise<string> {
   return run(file, [...prefix, ...globalArgs(settings), ...args]);
 }
 
+export interface SearchOptions {
+  /** The signed-in user's name, to tell their own projects from other people's. */
+  username?: string | null;
+}
+
+/** Fork is for projects that are not the user's own; without a username, for team projects only. */
+export function canFork(
+  path: string,
+  kind: "group" | "user" | null,
+  username: string | null | undefined,
+): boolean {
+  if (username) return !path.startsWith(`${username}/`);
+  return kind === "group";
+}
+
 export async function searchProjects(
   settings: GitLabSettings,
   query: string,
   limit: number,
+  options: SearchOptions = {},
 ): Promise<GitLabProject[]> {
   const trimmed = query.trim();
   // Not `--simple`: the full record says whether a project belongs to a group and what it forks.
@@ -103,6 +119,7 @@ export async function searchProjects(
       lastActivityAt: row.last_activity_at ?? null,
       namespaceKind: namespaceKind(row),
       forkedFrom: row.forked_from_project?.path_with_namespace ?? null,
+      canFork: canFork(row.path_with_namespace, namespaceKind(row), options.username),
     }));
 }
 

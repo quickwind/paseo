@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 
 export interface JobPoll<Result> {
   state: "running" | "done" | "failed";
-  step: string;
+  /** Every step so far, in order; the last one is current. */
+  steps: string[];
   result: Result | null;
   error: string | null;
 }
@@ -32,7 +33,7 @@ export function createJobs<Result>(now: () => number = Date.now) {
       const id = randomUUID();
       const job: Job<Result> = {
         state: "running",
-        step: firstStep,
+        steps: [firstStep],
         result: null,
         error: null,
         finishedAt: null,
@@ -41,7 +42,7 @@ export function createJobs<Result>(now: () => number = Date.now) {
       void (async () => {
         try {
           job.result = await work((step) => {
-            job.step = step;
+            if (job.steps.at(-1) !== step) job.steps.push(step);
           });
           job.state = "done";
         } catch (error) {
@@ -59,12 +60,12 @@ export function createJobs<Result>(now: () => number = Date.now) {
       if (!job) {
         return {
           state: "failed",
-          step: "",
+          steps: [],
           result: null,
           error: "That job is no longer available",
         };
       }
-      return { state: job.state, step: job.step, result: job.result, error: job.error };
+      return { state: job.state, steps: [...job.steps], result: job.result, error: job.error };
     },
   };
 }

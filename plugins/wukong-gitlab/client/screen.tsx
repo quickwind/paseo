@@ -2,7 +2,15 @@ import type { PluginScreenProps } from "@getpaseo/plugin/client";
 import { usePaseo, useRpc } from "@getpaseo/plugin/client";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import {
+  ActivityIndicator,
+  Modal,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import {
   pollCloneRpc,
   searchProjectsRpc,
@@ -31,10 +39,11 @@ const GIVE_UP_AFTER_MS = 30 * 60 * 1000;
 
 type CloneState =
   | { status: "idle" }
-  | { status: "running"; path: string; fork: boolean; step: string }
-  | { status: "done"; path: string; fork: boolean; result: CloneResult }
-  | { status: "failed"; path: string; fork: boolean; error: string };
+  | { status: "running"; path: string; fork: boolean; steps: string[] }
+  | { status: "done"; path: string; fork: boolean; steps: string[]; result: CloneResult }
+  | { status: "failed"; path: string; fork: boolean; steps: string[]; error: string };
 
+const OPENING_STEP = "Opening the project…";
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /** Starts a clone (or fork then clone) on the daemon, follows it, and opens the result. */
@@ -49,7 +58,8 @@ function useCloneJob(parentDirectory: string) {
     async (project: GitLabProject, fork: boolean) => {
       if (running) return;
       const path = project.path;
-      setState({ status: "running", path, fork, step: fork ? "Forking…" : "Cloning…" });
+      let steps = ["Starting…"];
+      setState({ status: "running", path, fork, steps });
       try {
         const { id } = await start({
           path,
@@ -58,24 +68,33 @@ function useCloneJob(parentDirectory: string) {
         });
         for (let waited = 0; waited <= GIVE_UP_AFTER_MS; waited += POLL_INTERVAL_MS) {
           const job = await poll({ id });
+          steps = job.steps.length > 0 ? job.steps : steps;
           if (job.state === "failed") throw new Error(job.error ?? "The clone failed");
           if (job.state === "done" && job.result) {
+            setState({ status: "running", path, fork, steps: [...steps, OPENING_STEP] });
             await paseo.workspaces.open(job.result.directory);
-            setState({ status: "done", path, fork, result: job.result });
+            setState({
+              status: "done",
+              path,
+              fork,
+              steps: [...steps, OPENING_STEP],
+              result: job.result,
+            });
             return;
           }
-          setState({ status: "running", path, fork, step: job.step });
+          setState({ status: "running", path, fork, steps });
           await sleep(POLL_INTERVAL_MS);
         }
         throw new Error("The clone is taking too long; check the daemon log");
       } catch (error) {
-        setState({ status: "failed", path, fork, error: messageOf(error) });
+        setState({ status: "failed", path, fork, steps, error: messageOf(error) });
       }
     },
     [running, start, poll, paseo, parentDirectory],
   );
 
-  return { state, run };
+  const dismiss = useCallback(() => setState({ status: "idle" }), []);
+  return { state, run, dismiss };
 }
 
 function createStyles(theme: PluginScreenProps["theme"], compact: boolean) {
@@ -122,6 +141,39 @@ function createStyles(theme: PluginScreenProps["theme"], compact: boolean) {
       borderWidth: 1,
     },
     secondaryButtonText: { color: theme.colors.accent },
+    backdrop: {
+      flex: 1,
+      alignItems: "center" as const,
+      justifyContent: "center" as const,
+      padding: 16,
+      backgroundColor: "rgba(0, 0, 0, 0.5)",
+    },
+    dialog: {
+      width: "100%" as const,
+      maxWidth: 520,
+      padding: 20,
+      borderRadius: 10,
+      backgroundColor: theme.colors.surface0,
+      borderColor: theme.colors.border,
+      borderWidth: 1,
+    },
+    dialogTitle: { color: theme.colors.foreground, fontWeight: "700" as const, fontSize: 16 },
+    dialogSubtitle: { color: theme.colors.foregroundMuted, marginTop: 2 },
+    stepRow: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      marginTop: 10,
+      gap: 10,
+    },
+    stepMark: { width: 18, textAlign: "center" as const, color: theme.colors.statusSuccess },
+    stepMarkFailed: { width: 18, textAlign: "center" as const, color: theme.colors.statusDanger },
+    stepText: { color: theme.colors.foreground, flexShrink: 1 },
+    stepTextPending: { color: theme.colors.foregroundMuted, flexShrink: 1 },
+    dialogFooter: {
+      marginTop: 18,
+      flexDirection: "row" as const,
+      justifyContent: "flex-end" as const,
+    },
     error: { color: theme.colors.statusDanger, marginTop: 12 },
     success: { color: theme.colors.statusSuccess, marginTop: 12 },
   };
@@ -139,8 +191,9 @@ interface ProjectRowProps {
 function ProjectRow({ project, styles, busy, activeKind, onClone }: ProjectRowProps) {
   const pressClone = useCallback(() => onClone(project, false), [onClone, project]);
   const pressFork = useCallback(() => onClone(project, true), [onClone, project]);
-  // A team project is cloned through the user's own fork; a personal project or a fork is cloned as is.
-  const offersFork = project.namespaceKind === "group";
+  // Projects that are not the user's own (a team's, or one a colleague shared) are cloned through
+  // the user's own fork; the user's own projects are cloned as they are.
+  const offersFork = project.canFork;
   return (
     <View style={styles.row}>
       <Text style={styles.title}>{project.path}</Text>
@@ -176,6 +229,78 @@ function ProjectRow({ project, styles, busy, activeKind, onClone }: ProjectRowPr
   );
 }
 
+function StepList({
+  state,
+  styles,
+  theme,
+}: {
+  state: Exclude<CloneState, { status: "idle" }>;
+  styles: ReturnType<typeof createStyles>;
+  theme: PluginScreenProps["theme"];
+}) {
+  return (
+    <View>
+      {state.steps.map((step, index) => {
+        const isLast = index === state.steps.length - 1;
+        const current = isLast && state.status === "running";
+        const failed = isLast && state.status === "failed";
+        return (
+          <View key={step} style={styles.stepRow}>
+            {current ? (
+              <ActivityIndicator size="small" color={theme.colors.accent} />
+            ) : (
+              <Text style={failed ? styles.stepMarkFailed : styles.stepMark}>
+                {failed ? "✕" : "✓"}
+              </Text>
+            )}
+            <Text style={current ? styles.stepText : styles.stepTextPending}>{step}</Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+function ProgressDialog({
+  state,
+  styles,
+  theme,
+  onClose,
+}: {
+  state: CloneState;
+  styles: ReturnType<typeof createStyles>;
+  theme: PluginScreenProps["theme"];
+  onClose(): void;
+}) {
+  if (state.status === "idle") return null;
+  const finished = state.status !== "running";
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={finished ? onClose : undefined}>
+      <View style={styles.backdrop}>
+        <View style={styles.dialog} accessibilityViewIsModal>
+          <Text style={styles.dialogTitle}>{state.fork ? "Fork clone" : "Clone and open"}</Text>
+          <Text style={styles.dialogSubtitle}>{state.path}</Text>
+          <StepList state={state} styles={styles} theme={theme} />
+          {state.status === "done" ? <Text style={styles.success}>{describe(state)}</Text> : null}
+          {state.status === "failed" ? <Text style={styles.error}>{state.error}</Text> : null}
+          {finished ? (
+            <View style={styles.dialogFooter}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Close"
+                style={styles.button}
+                onPress={onClose}
+              >
+                <Text style={styles.buttonText}>Close</Text>
+              </Pressable>
+            </View>
+          ) : null}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 function activeKindFor(state: CloneState, path: string): "clone" | "fork" | null {
   if (state.status !== "running" || state.path !== path) return null;
   return state.fork ? "fork" : "clone";
@@ -206,7 +331,7 @@ export function AddFromGitLabScreen({ theme, layout }: PluginScreenProps) {
   });
   const cloneRoot = results.data?.cloneRoot ?? "";
 
-  const { state: cloneState, run: runClone } = useCloneJob(folder);
+  const { state: cloneState, run: runClone, dismiss } = useCloneJob(folder);
 
   const openLocal = useMutation({
     mutationFn: async (directory: string) => (await paseo.workspaces.open(directory)).directory,
@@ -267,19 +392,7 @@ export function AddFromGitLabScreen({ theme, layout }: PluginScreenProps) {
       {openLocal.error ? <Text style={styles.error}>{messageOf(openLocal.error)}</Text> : null}
       {openLocal.data ? <Text style={styles.success}>Opened {openLocal.data}</Text> : null}
 
-      {cloneState.status === "running" ? (
-        <Text style={styles.muted}>
-          {cloneState.path}: {cloneState.step}
-        </Text>
-      ) : null}
-      {cloneState.status === "failed" ? (
-        <Text style={styles.error}>
-          {cloneState.path}: {cloneState.error}
-        </Text>
-      ) : null}
-      {cloneState.status === "done" ? (
-        <Text style={styles.success}>{describe(cloneState)}</Text>
-      ) : null}
+      <ProgressDialog state={cloneState} styles={styles} theme={theme} onClose={dismiss} />
       {results.error ? <Text style={styles.error}>{messageOf(results.error)}</Text> : null}
 
       <ScrollView>

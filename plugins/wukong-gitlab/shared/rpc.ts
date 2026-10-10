@@ -11,6 +11,11 @@ export const GitLabProjectSchema = z.object({
   namespaceKind: z.enum(["group", "user"]).nullable(),
   /** The path of the project this one was forked from, when it is a fork. */
   forkedFrom: z.string().nullable(),
+  /**
+   * Whether Fork clone is offered: the project is not in the user's own namespace, whether it
+   * belongs to a team or to a colleague who shared it.
+   */
+  canFork: z.boolean(),
 });
 
 export type GitLabProject = z.infer<typeof GitLabProjectSchema>;
@@ -56,8 +61,8 @@ export const pollCloneRpc = defineRpc({
   input: z.object({ id: z.string() }),
   output: z.object({
     state: z.enum(["running", "done", "failed"]),
-    /** What the job is doing now, for display. */
-    step: z.string(),
+    /** Every step so far, in order; the last one is what the job is doing now. */
+    steps: z.array(z.string()),
     result: CloneResultSchema.nullable(),
     error: z.string().nullable(),
   }),

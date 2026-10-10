@@ -30,7 +30,7 @@ const cloneJobs = createJobs<CloneResult>();
 export default function contribute(server: PluginServerContext) {
   server.handle(searchProjectsRpc, search);
   server.handle(startCloneRpc, (input) => ({
-    id: cloneJobs.start((report) => runClone(input, report), input.fork ? "Forking…" : "Cloning…"),
+    id: cloneJobs.start((report) => runClone(input, report), "Starting…"),
   }));
   server.handle(pollCloneRpc, ({ id }) => cloneJobs.poll(id));
   server.handle(startPickFolderRpc, ({ title }) => ({ id: folderPicker.start(title) }));

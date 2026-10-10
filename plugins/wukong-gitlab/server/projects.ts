@@ -15,14 +15,36 @@ import {
   searchProjects,
 } from "./gitlab.js";
 
+// Who is signed in changes rarely and costs a request; asking once per daemon run per server is plenty.
+const usernames = new Map<string, Promise<string | null>>();
+
+/** For tests: forget who was signed in. */
+export function forgetUsernames(): void {
+  usernames.clear();
+}
+
+function knownUsername(settings: GitLabSettings): Promise<string | null> {
+  const key = `${settings.url}#${settings.configSection ?? ""}`;
+  let known = usernames.get(key);
+  if (!known) {
+    known = currentUsername(settings).catch(() => {
+      usernames.delete(key); // try again next time; Fork clone falls back to team projects only
+      return null;
+    });
+    usernames.set(key, known);
+  }
+  return known;
+}
+
 export async function search({
   query,
   limit,
 }: RpcInput<typeof searchProjectsRpc>): Promise<RpcOutput<typeof searchProjectsRpc>> {
   const settings = loadSettings();
+  const username = await knownUsername(settings);
   return {
     cloneRoot: settings.cloneRoot,
-    projects: await searchProjects(settings, query, limit ?? 30),
+    projects: await searchProjects(settings, query, limit ?? 30, { username }),
   };
 }
 
