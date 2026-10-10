@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { PLUGIN_SDK_ALIAS, toLocalSdkSpecifier } from "../../wukong/plugin-sdk-alias.js"; // Wukong
 import { createRequire, isBuiltin } from "node:module";
 import path from "node:path";
 import { createPluginImportReader, type PluginImportKind } from "./compiler-imports.js";
@@ -235,7 +236,8 @@ function createRuntimeBoundaryPlugin(target: PluginBuildTarget, pluginDirectory:
         const key = `${owner}:${file}`;
         if (checked.has(key) || !/\.[cm]?[jt]sx?$/.test(file)) return null;
         checked.add(key);
-        for (const { specifier, kind, typeOnly } of imports.read(file)) {
+        for (const { specifier: written, kind, typeOnly } of imports.read(file)) {
+          const specifier = toLocalSdkSpecifier(written); // Wukong
           const packageSpecifier =
             kind === "type-reference"
               ? `@types/${specifier.replace(/^@/, "").replace("/", "__")}`
@@ -266,7 +268,8 @@ function createRuntimeBoundaryPlugin(target: PluginBuildTarget, pluginDirectory:
       buildContext.onLoad({ filter: /\.[cm]?[jt]sx?$/ }, (args) =>
         checkSourceImports(args.path, target),
       );
-      buildContext.onResolve({ filter: /.*/ }, async (args) => {
+      buildContext.onResolve({ filter: /.*/ }, async (resolveArgs) => {
+        const args = { ...resolveArgs, path: toLocalSdkSpecifier(resolveArgs.path) }; // Wukong
         if (args.kind === "entry-point") return null;
         if (args.pluginData === boundaryResolution) return null;
         const importer =
@@ -409,6 +412,7 @@ async function compileTarget(entryPath: string, target: PluginBuildTarget): Prom
             "zod",
           ]
         : SERVER_HOST_MODULES,
+    alias: PLUGIN_SDK_ALIAS, // Wukong
     plugins: [createRuntimeBoundaryPlugin(target, pluginDirectory)],
     metafile: true,
     logLevel: "silent",
