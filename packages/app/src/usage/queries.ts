@@ -16,6 +16,7 @@ import {
   useHosts,
 } from "@/runtime/host-runtime";
 import { useSessionStore, type SessionState } from "@/stores/session-store";
+import { usageRefetchInterval } from "@/wukong/build";
 import { usageCopy } from "./copy";
 import {
   replaceReport,
@@ -167,6 +168,7 @@ export function useUsageHostReports(serverId: string | null): UsageReportEntry[]
     queryFn: serverId ? () => listReports(queryClient, serverId) : skipToken,
     dataShape: "list",
     staleTimeMs: REPORTS_STALE_TIME_MS,
+    refetchInterval: usageRefetchInterval(), // Wukong: keep the pinned usage current
   });
   return query.data ?? NO_REPORTS;
 }

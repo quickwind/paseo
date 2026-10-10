@@ -101,4 +101,10 @@ describe("pluginSourceField", () => {
       trailing: undefined,
     });
   });
+
+  it("polls pinned usage only in a Wukong build", async () => {
+    expect((await load()).usageRefetchInterval()).toBe(false);
+    vi.stubEnv("EXPO_PUBLIC_WUKONG", "1");
+    expect((await load()).usageRefetchInterval()).toBeGreaterThan(300_000);
+  });
 });

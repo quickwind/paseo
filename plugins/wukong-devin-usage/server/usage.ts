@@ -13,6 +13,7 @@ import { z } from "zod";
 import {
   unavailable,
   type UsageAccount,
+  type UsageDetail,
   type UsageReport,
   type UsageScope,
   type UsageWindow,
@@ -102,20 +103,12 @@ const UserStatusSchema = z.object({
         .object({
           acuConsumed: z.number().optional(),
           acuLimit: z.number().optional(),
-          planStart: z.string().optional(),
-          planEnd: z.string().optional(),
           planInfo: z.object({ planName: z.string().optional() }).optional(),
         })
         .optional(),
     })
     .optional(),
 });
-
-function validIso(value: string | undefined): string | null {
-  if (!value) return null;
-  const time = Date.parse(value);
-  return Number.isNaN(time) ? null : new Date(time).toISOString();
-}
 
 function format(acu: number): string {
   return Number.isInteger(acu) ? String(acu) : acu.toFixed(2);
@@ -127,7 +120,62 @@ function toneFor(usedPct: number): UsageWindow["tone"] {
   return undefined;
 }
 
-export function reportFromStatus(body: unknown): UsageReport {
+const DAY_MS = 86_400_000;
+// Too early in the month, one busy day swings the average too far to call.
+const MIN_FORECAST_DAYS = 3;
+
+/** Usage resets on the first of each calendar month. `planEnd` is the contract end, not a cycle. */
+export function monthBounds(now: Date): { start: number; end: number } {
+  return {
+    start: Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
+    end: Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1),
+  };
+}
+
+interface Weather {
+  icon: string;
+  word: string;
+  tone: UsageWindow["tone"];
+}
+
+// Projected month-end use against the limit.
+function weatherFor(ratio: number): Weather {
+  if (ratio < 0.6) return { icon: "☀️", word: "plenty of room", tone: undefined };
+  if (ratio < 0.85) return { icon: "🌤️", word: "on track", tone: undefined };
+  if (ratio <= 1) return { icon: "⛅", word: "tight", tone: "warning" };
+  if (ratio <= 1.25) return { icon: "🌧️", word: "likely over", tone: "danger" };
+  return { icon: "⛈️", word: "well over", tone: "danger" };
+}
+
+function detail(id: string, label: string, value: string, tone?: UsageWindow["tone"]): UsageDetail {
+  return tone ? { id, label, value, tone } : { id, label, value };
+}
+
+export interface Forecast {
+  projected: number;
+  ratio: number;
+  weather: Weather;
+  /** When the limit is reached at this month's pace; null if it is not. */
+  runsOutAt: string | null;
+}
+
+/** This month's pace carried to month end. Null until there are a few days of data. */
+export function forecastMonth(consumed: number, limit: number, now: Date): Forecast | null {
+  const { start, end } = monthBounds(now);
+  const elapsed = now.getTime() - start;
+  if (elapsed < MIN_FORECAST_DAYS * DAY_MS || limit <= 0) return null;
+  const rate = consumed / elapsed;
+  const projected = rate * (end - start);
+  const ratio = projected / limit;
+  let runsOutAt: string | null = null;
+  if (consumed >= limit) runsOutAt = now.toISOString();
+  else if (projected > limit) {
+    runsOutAt = new Date(now.getTime() + (limit - consumed) / rate).toISOString();
+  }
+  return { projected, ratio, weather: weatherFor(ratio), runsOutAt };
+}
+
+export function reportFromStatus(body: unknown, now: Date = new Date()): UsageReport {
   const parsed = UserStatusSchema.safeParse(body);
   const plan = parsed.success ? parsed.data.userStatus?.planStatus : undefined;
   if (!plan) throw new Error("Devin usage response has no plan status; the API may have changed");
@@ -137,6 +185,7 @@ export function reportFromStatus(body: unknown): UsageReport {
   }
   const consumed = plan.acuConsumed ?? 0;
   const usedPct = Math.min(100, (consumed / limit) * 100);
+  const forecast = forecastMonth(consumed, limit, now);
   const window: UsageWindow = {
     id: "acu-period",
     label: "Monthly ACU",
@@ -144,22 +193,46 @@ export function reportFromStatus(body: unknown): UsageReport {
     summary: true,
     usedPct,
     remainingPct: Math.max(0, 100 - usedPct),
-    resetsAt: validIso(plan.planEnd),
+    resetsAt: new Date(monthBounds(now).end).toISOString(),
   };
   const tone = toneFor(usedPct);
   if (tone) window.tone = tone;
+  if (forecast?.runsOutAt) {
+    window.runsOutAt = forecast.runsOutAt;
+    window.shortfallPct = Math.max(0, (forecast.ratio - 1) * 100);
+  }
+  const windows: UsageWindow[] = [window];
+  const details: UsageDetail[] = [
+    detail("acu", "ACU used", `${format(consumed)} / ${format(limit)}`, tone),
+  ];
+  if (forecast) {
+    const { weather } = forecast;
+    windows.push({
+      id: "acu-forecast",
+      label: `Month-end forecast: ${weather.word}`,
+      shortLabel: weather.icon,
+      summary: true,
+      usedPct: Math.min(100, forecast.ratio * 100),
+      ...(weather.tone ? { tone: weather.tone } : {}),
+    });
+    details.push(
+      detail(
+        "acu-forecast",
+        "Forecast",
+        `${weather.icon} ~${format(forecast.projected)} / ${format(limit)} by month end, ${weather.word}`,
+        weather.tone,
+      ),
+    );
+  } else {
+    details.push(
+      detail("acu-forecast", "Forecast", `after ${MIN_FORECAST_DAYS} days of data this month`),
+    );
+  }
   return {
     status: "available",
     planLabel: plan.planInfo?.planName,
-    windows: [window],
-    details: [
-      {
-        id: "acu",
-        label: "ACU used",
-        value: `${format(consumed)} / ${format(limit)}`,
-        ...(tone ? { tone } : {}),
-      },
-    ],
+    windows,
+    details,
   };
 }
 

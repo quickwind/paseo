@@ -40,70 +40,139 @@ const deps = (fetchApi: typeof fetch, readLogin = async () => login) => ({
   cliVersion: async () => "3000.6.2",
 });
 
+// Oct 10 noon UTC: 9.5 days into a 31-day month.
+const NOW = new Date("2026-10-10T12:00:00Z");
+
+function available(report: ReturnType<typeof reportFromStatus>) {
+  if (report.status !== "available") throw new Error(`expected available, got ${report.status}`);
+  return report;
+}
+
+const acuStatus = (acuConsumed: number | undefined, acuLimit = 30) => ({
+  userStatus: { planStatus: { acuConsumed, acuLimit } },
+});
+
 describe("reportFromStatus", () => {
-  it("turns ACU used and limit into one monthly window and a detail", () => {
-    const report = reportFromStatus(realStatus);
-    expect(report.status).toBe("available");
-    if (report.status !== "available") return;
+  it("turns ACU used and limit into a monthly window and a detail", () => {
+    const report = available(reportFromStatus(realStatus, NOW));
     expect(report.planLabel).toBe("Cognition Platform (Enterprise)");
-    expect(report.windows).toHaveLength(1);
-    const [window] = report.windows;
+    const window = report.windows[0];
     expect(window?.label).toBe("Monthly ACU");
     expect(window?.usedPct).toBeCloseTo(31.05, 1);
     expect(window?.remainingPct).toBeCloseTo(68.95, 1);
-    expect(window?.resetsAt).toBe("2026-11-01T00:00:00.000Z");
     expect(window?.tone).toBeUndefined();
     expect(report.details?.[0]).toMatchObject({ label: "ACU used", value: "9.31 / 30" });
   });
 
-  it("warns from 80 percent and flags danger from 95", () => {
-    const at = (acuConsumed: number) => {
-      const report = reportFromStatus({
-        userStatus: { planStatus: { acuConsumed, acuLimit: 30 } },
-      });
-      return report.status === "available" ? report.windows[0]?.tone : "not available";
+  it("resets on the first of the next calendar month, not on the contract end", () => {
+    const body = {
+      userStatus: {
+        planStatus: { acuConsumed: 9, acuLimit: 30, planEnd: "2027-08-01T00:00:00Z" },
+      },
     };
-    expect(at(23.9)).toBeUndefined();
-    expect(at(24)).toBe("warning");
-    expect(at(28.4)).toBe("warning");
-    expect(at(28.5)).toBe("danger");
-    expect(at(40)).toBe("danger");
+    expect(available(reportFromStatus(body, NOW)).windows[0]?.resetsAt).toBe(
+      "2026-11-01T00:00:00.000Z",
+    );
+    expect(
+      available(reportFromStatus(body, new Date("2026-12-31T23:00:00Z"))).windows[0]?.resetsAt,
+    ).toBe("2027-01-01T00:00:00.000Z");
+    expect(
+      available(reportFromStatus(body, new Date("2026-11-01T00:00:00Z"))).windows[0]?.resetsAt,
+    ).toBe("2026-12-01T00:00:00.000Z");
+  });
+
+  it("warns from 80 percent and flags danger from 95", () => {
+    const tone = (acu: number) => available(reportFromStatus(acuStatus(acu), NOW)).windows[0]?.tone;
+    expect(tone(23.9)).toBeUndefined();
+    expect(tone(24)).toBe("warning");
+    expect(tone(28.4)).toBe("warning");
+    expect(tone(28.5)).toBe("danger");
+    expect(tone(40)).toBe("danger");
   });
 
   it("caps the bar at 100 percent when the account is over its limit", () => {
-    const report = reportFromStatus({
-      userStatus: { planStatus: { acuConsumed: 40, acuLimit: 30 } },
-    });
-    if (report.status !== "available") throw new Error("expected available");
+    const report = available(reportFromStatus(acuStatus(40), NOW));
     expect(report.windows[0]?.usedPct).toBe(100);
     expect(report.details?.[0]?.value).toBe("40 / 30");
   });
 
   it("treats a missing consumed value as zero, as proto3 JSON omits zeros", () => {
-    const report = reportFromStatus({ userStatus: { planStatus: { acuLimit: 30 } } });
-    if (report.status !== "available") throw new Error("expected available");
+    const report = available(reportFromStatus(acuStatus(undefined), NOW));
     expect(report.windows[0]?.usedPct).toBe(0);
     expect(report.details?.[0]?.value).toBe("0 / 30");
   });
 
-  it("ignores an unreadable plan end instead of showing a bad date", () => {
-    const report = reportFromStatus({
-      userStatus: { planStatus: { acuLimit: 30, planEnd: "soon" } },
-    });
-    if (report.status !== "available") throw new Error("expected available");
-    expect(report.windows[0]?.resetsAt).toBeNull();
-  });
-
   it("says so when the plan has no ACU limit rather than showing zero", () => {
-    expect(reportFromStatus({ userStatus: { planStatus: { planInfo: {} } } })).toEqual({
+    expect(reportFromStatus({ userStatus: { planStatus: { planInfo: {} } } }, NOW)).toEqual({
       status: "unavailable",
       problem: { kind: "no_quota", detail: "This Devin plan reports no ACU limit" },
     });
   });
 
   it("fails loudly when the response no longer has a plan status", () => {
-    expect(() => reportFromStatus({ userStatus: {} })).toThrow(/API may have changed/);
-    expect(() => reportFromStatus("nope")).toThrow(/API may have changed/);
+    expect(() => reportFromStatus({ userStatus: {} }, NOW)).toThrow(/API may have changed/);
+    expect(() => reportFromStatus("nope", NOW)).toThrow(/API may have changed/);
+  });
+});
+
+describe("month-end forecast", () => {
+  const weather = (acu: number, now = NOW) => {
+    const report = available(reportFromStatus(acuStatus(acu), now));
+    return report.windows.find((w) => w.id === "acu-forecast");
+  };
+
+  it("picks the weather from projected use against the limit", () => {
+    // 9.5 days in, 31 days in the month: projected = acu * 31 / 9.5 = acu * 3.263
+    expect(weather(5)?.shortLabel).toBe("☀️"); // 16.3 of 30
+    expect(weather(7)?.shortLabel).toBe("🌤️"); // 22.8
+    expect(weather(8.5)?.shortLabel).toBe("⛅"); // 27.7
+    expect(weather(9.314008)?.shortLabel).toBe("🌧️"); // 30.4: just over
+    expect(weather(13)?.shortLabel).toBe("⛈️"); // 42.4
+  });
+
+  it("colours the forecast window by how bad it looks", () => {
+    expect(weather(5)?.tone).toBeUndefined();
+    expect(weather(8.5)?.tone).toBe("warning");
+    expect(weather(13)?.tone).toBe("danger");
+  });
+
+  it("shows the projected figure in the details", () => {
+    const report = available(reportFromStatus(acuStatus(9.314008), NOW));
+    const detail = report.details?.find((d) => d.id === "acu-forecast");
+    expect(detail?.value).toBe("🌧️ ~30.39 / 30 by month end, likely over");
+    expect(detail?.tone).toBe("danger");
+  });
+
+  it("marks when the limit runs out, using the app's own at-risk fields, only if it will", () => {
+    const over = available(reportFromStatus(acuStatus(9.314008), NOW)).windows[0];
+    expect(over?.runsOutAt).toBeDefined();
+    expect(Date.parse(over?.runsOutAt ?? "")).toBeGreaterThan(NOW.getTime());
+    expect(Date.parse(over?.runsOutAt ?? "")).toBeLessThan(Date.parse("2026-11-01T00:00:00Z"));
+    expect(over?.shortfallPct).toBeCloseTo(1.3, 1);
+    const fine = available(reportFromStatus(acuStatus(5), NOW)).windows[0];
+    expect(fine?.runsOutAt).toBeUndefined();
+    expect(fine?.shortfallPct).toBeUndefined();
+  });
+
+  it("says the limit is already reached when the account has used it all", () => {
+    const window = available(reportFromStatus(acuStatus(30), NOW)).windows[0];
+    expect(window?.runsOutAt).toBe(NOW.toISOString());
+  });
+
+  it("makes no forecast in the first days of a month", () => {
+    const early = new Date("2026-10-02T12:00:00Z"); // 1.5 days in
+    const report = available(reportFromStatus(acuStatus(5), early));
+    expect(report.windows).toHaveLength(1);
+    expect(report.details?.find((d) => d.id === "acu-forecast")?.value).toMatch(/after 3 days/);
+    expect(weather(5, new Date("2026-10-04T00:00:00Z"))).toBeDefined(); // exactly 3 days
+  });
+
+  it("pins the weather beside the ACU bar by default", () => {
+    const report = available(reportFromStatus(acuStatus(5), NOW));
+    expect(report.windows.map((w) => [w.id, w.summary])).toEqual([
+      ["acu-period", true],
+      ["acu-forecast", true],
+    ]);
   });
 });
 
