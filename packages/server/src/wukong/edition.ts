@@ -12,6 +12,9 @@ export function applyWukongEdition(): void {
   // The relay is a cloud service. A launch-time override also locks it against config edits.
   process.env.PASEO_RELAY_ENABLED = "false";
 
+  // Wukong has no desktop app: the daemon serves the web UI unless the launch says otherwise.
+  process.env.PASEO_WEB_UI_ENABLED ??= "true";
+
   // No dictation or voice mode, so no speech models: nothing to download at startup.
   process.env.PASEO_DICTATION_ENABLED = "false";
   process.env.PASEO_VOICE_MODE_ENABLED = "false";

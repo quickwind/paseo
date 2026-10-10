@@ -1,4 +1,5 @@
 import { useCallback } from "react";
+import { WUKONG_BUILD } from "@/wukong/build"; // Wukong
 import { View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { Heart } from "lucide-react-native";
@@ -22,6 +23,8 @@ export function CommunityLinks() {
   const handleOpenDiscord = useCallback(() => {
     void openExternalUrl("https://discord.gg/jz8T2uahpH");
   }, []);
+
+  if (WUKONG_BUILD) return null; // Wukong: upstream's GitHub, sponsor and Discord links
 
   return (
     <View style={styles.row}>

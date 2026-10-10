@@ -479,6 +479,7 @@ function AboutSection({ appVersion, appVersionText, isDesktopApp }: AboutSection
 function WhatsNewRow() {
   const { t } = useTranslation();
   const { theme } = useUnistyles();
+  if (WUKONG_BUILD) return null; // Wukong: the changelog is upstream's
 
   return (
     <Pressable

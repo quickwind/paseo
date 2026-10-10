@@ -1,4 +1,5 @@
 import { useCallback, useMemo } from "react";
+import { upstreamOnly } from "@/wukong/build"; // Wukong
 import { useTranslation } from "react-i18next";
 import { Pressable, Text, View } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
@@ -40,6 +41,8 @@ const styles = StyleSheet.create((theme) => ({
     flex: 1,
   },
 }));
+
+const UpstreamPressable = upstreamOnly(Pressable); // Wukong: pairing links go through the relay
 
 export interface AddHostMethodModalProps {
   visible: boolean;
@@ -135,7 +138,7 @@ export function AddHostMethodModal({
         </Pressable>
       ) : null}
 
-      <Pressable
+      <UpstreamPressable
         style={styles.option}
         onPress={handlePaste}
         accessibilityRole="button"
@@ -149,7 +152,7 @@ export function AddHostMethodModal({
             {t("pairing.connectionMethods.pasteLink.description")}
           </Text>
         </View>
-      </Pressable>
+      </UpstreamPressable>
     </AdaptiveModalSheet>
   );
 }

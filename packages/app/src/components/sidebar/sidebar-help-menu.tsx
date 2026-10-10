@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { upstreamOnly } from "@/wukong/build"; // Wukong
 import { Text, View } from "react-native";
 import { Activity, CircleHelp, Gift, Keyboard } from "lucide-react-native";
 import { useTranslation } from "react-i18next";
@@ -28,6 +29,10 @@ import { formatVersionWithPrefix } from "@/desktop/updates/desktop-updates";
 import { resolveAppVersion } from "@/utils/app-version";
 import { openChangelog } from "@/changelog";
 import { openExternalUrl } from "@/utils/open-external-url";
+
+const UpstreamMenuItem = upstreamOnly(DropdownMenuItem); // Wukong
+const UpstreamMenuLabel = upstreamOnly(DropdownMenuLabel); // Wukong
+const UpstreamMenuSeparator = upstreamOnly(DropdownMenuSeparator); // Wukong
 
 const DISCORD_URL = "https://discord.gg/jz8T2uahpH";
 const GITHUB_ISSUE_URL = "https://github.com/getpaseo/paseo/issues/new";
@@ -135,13 +140,13 @@ export function SidebarHelpMenu() {
             {t("sidebar.help.shortcuts")}
           </DropdownMenuItem>
         ) : null}
-        <DropdownMenuItem
+        <UpstreamMenuItem
           testID="sidebar-help-changelog"
           leading={changelogLeadingIcon}
           onSelect={openChangelog}
         >
           {t("sidebar.help.whatsNew")}
-        </DropdownMenuItem>
+        </UpstreamMenuItem>
         <DropdownMenuItem
           testID="sidebar-help-diagnostics"
           leading={diagnosticLeadingIcon}
@@ -149,22 +154,22 @@ export function SidebarHelpMenu() {
         >
           {t("sidebar.help.diagnostics")}
         </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuLabel>{t("sidebar.help.reportIssue")}</DropdownMenuLabel>
-        <DropdownMenuItem
+        <UpstreamMenuSeparator />
+        <UpstreamMenuLabel>{t("sidebar.help.reportIssue")}</UpstreamMenuLabel>
+        <UpstreamMenuItem
           testID="sidebar-help-discord"
           leading={discordLeadingIcon}
           onSelect={openDiscord}
         >
           {t("sidebar.help.discord")}
-        </DropdownMenuItem>
-        <DropdownMenuItem
+        </UpstreamMenuItem>
+        <UpstreamMenuItem
           testID="sidebar-help-github"
           leading={githubLeadingIcon}
           onSelect={openGitHubIssue}
         >
           {t("sidebar.help.github")}
-        </DropdownMenuItem>
+        </UpstreamMenuItem>
         <DropdownMenuSeparator />
         <View style={styles.versionList}>
           <DropdownMenuHint
