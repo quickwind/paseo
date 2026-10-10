@@ -1,0 +1,5 @@
+#!/usr/bin/env -S node --disable-warning=DEP0040
+import { applyWukongDefaults } from "../dist/wukong/defaults.js";
+
+applyWukongDefaults();
+await import("../dist/index.js");

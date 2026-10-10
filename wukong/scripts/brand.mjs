@@ -35,6 +35,8 @@ const sha256 = (buffer) =>
 
 function listOverlayFiles(directory = OVERLAY_ROOT) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    // Finder and Explorer leave these behind in any folder they open.
+    if (entry.name === ".DS_Store" || entry.name === "Thumbs.db") return [];
     const full = path.join(directory, entry.name);
     return entry.isDirectory() ? listOverlayFiles(full) : [path.relative(OVERLAY_ROOT, full)];
   });
@@ -109,16 +111,23 @@ function applyOverlay(root, relative, dryRun, log) {
   }
 }
 
+// Wukong ships its own command and not `paseo`: a Paseo installed on the same machine owns that
+// name, and npm refuses to overwrite it (or, with --force, replaces it). bin/wukong also gives
+// Wukong its own home and port.
 function ensureWukongBin(root, dryRun, log) {
   const file = path.join(root, "packages/cli/package.json");
   const manifest = JSON.parse(readFileSync(file, "utf8"));
-  if (!manifest.bin?.paseo) {
-    throw new Error("packages/cli/package.json has no `paseo` bin to alias as `wukong`");
+  if (!manifest.bin?.paseo && !manifest.bin?.wukong) {
+    throw new Error("packages/cli/package.json has no `paseo` bin to replace with `wukong`");
   }
-  if (manifest.bin.wukong === manifest.bin.paseo) return;
-  log("bin     packages/cli/package.json: wukong -> same entry as paseo");
+  if (!existsSync(path.join(root, "packages/cli/bin/wukong"))) {
+    throw new Error("packages/cli/bin/wukong is missing");
+  }
+  const wanted = { wukong: "bin/wukong" };
+  if (JSON.stringify(manifest.bin) === JSON.stringify(wanted)) return;
+  log("bin     packages/cli/package.json: only `wukong` -> bin/wukong");
   if (!dryRun) {
-    manifest.bin = { ...manifest.bin, wukong: manifest.bin.paseo };
+    manifest.bin = wanted;
     writeFileSync(file, `${JSON.stringify(manifest, null, 2)}\n`);
   }
 }

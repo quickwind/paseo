@@ -19,6 +19,7 @@ const TOUCHED = [
   "packages/app/assets/images",
   "packages/app/public",
   "packages/cli/package.json",
+  "packages/cli/bin",
 ];
 
 function copyTree() {
@@ -47,8 +48,9 @@ test("brands the name, metadata, logo and CLI alias", () => {
   assert.match(read(root, "packages/app/public/index.html"), /app-title" content="Wukong"/);
   assert.match(read(root, "packages/app/app.config.js"), /name: "Wukong Debug"/);
   assert.match(read(root, "packages/app/src/components/icons/paseo-logo.tsx"), /WUKONG_LOGO/);
-  const bin = JSON.parse(read(root, "packages/cli/package.json")).bin;
-  assert.equal(bin.wukong, bin.paseo);
+  assert.deepEqual(JSON.parse(read(root, "packages/cli/package.json")).bin, {
+    wukong: "bin/wukong",
+  });
 });
 
 test("is idempotent", () => {

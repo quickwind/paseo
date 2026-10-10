@@ -95,7 +95,7 @@ registry:
 ```sh
 npm install -g @<scope>/cli @<scope>/server @<scope>/client @<scope>/protocol @<scope>/relay \
   @<scope>/plugin @<scope>/highlight
-wukong daemon start
+wukong daemon start        # http://127.0.0.1:6899, data in ~/.wukong
 ```
 
 Tag releases with a prefix other than `v` (for example `wukong-20261010`): upstream's release

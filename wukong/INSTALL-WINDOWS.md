@@ -39,23 +39,23 @@ wukong --version
 
 ## First run
 
-Give Wukong its own folder and port, so it does not mix with a Paseo you may already run (Paseo
-uses port 6767):
-
 ```powershell
-$wukongHome = "$env:USERPROFILE\.wukong"
-New-Item -ItemType Directory -Force $wukongHome | Out-Null
-'{"version":1,"daemon":{"listen":"127.0.0.1:6899"}}' | Set-Content -Encoding ascii "$wukongHome\config.json"
-wukong daemon start --home $wukongHome
+wukong daemon start
 ```
 
 Open **http://127.0.0.1:6899** in a browser.
 
-Other commands (always pass the same `--home`):
+Wukong keeps to itself, so it can sit next to a Paseo you already run:
+
+- the command is `wukong` (it does not install a `paseo` command);
+- its data lives in `%USERPROFILE%\.wukong` (Paseo uses `%USERPROFILE%\.paseo`);
+- it listens on port 6899 (Paseo uses 6767).
+
+Other commands:
 
 ```powershell
-wukong daemon status --home $wukongHome
-wukong daemon stop --home $wukongHome
+wukong daemon status
+wukong daemon stop
 ```
 
 The log is `%USERPROFILE%\.wukong\daemon.log`.
@@ -74,7 +74,7 @@ Create `%USERPROFILE%\.wukong\wukong.json`. Escape backslashes in JSON:
 }
 ```
 
-Then stop and start the daemon again. `configSection` is the section name in your
+Then run `wukong daemon stop` and `wukong daemon start` again. `configSection` is the section name in your
 `.python-gitlab.cfg`; leave it out to use the default section.
 
 ## What to try
