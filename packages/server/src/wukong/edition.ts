@@ -3,6 +3,7 @@
 // daemon start lives here, which keeps upstream files to a one-line import.
 
 import { activateWukongPolicy, isWukongActive } from "./policy.js";
+import { devinUsageHosts } from "./devin-hosts.js";
 import { allowEgressHost, installEgressGuard } from "./egress-guard.js";
 
 export function applyWukongEdition(): void {
@@ -23,6 +24,11 @@ export function applyWukongEdition(): void {
     if (host.trim()) {
       allowEgressHost(host);
     }
+  }
+
+  // The Devin usage plugin runs inside this guard and must reach Devin's own servers.
+  for (const host of devinUsageHosts()) {
+    allowEgressHost(host);
   }
 
   activateWukongPolicy();

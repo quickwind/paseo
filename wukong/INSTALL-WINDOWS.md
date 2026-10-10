@@ -166,7 +166,7 @@ CLI's `/usage` does. Run `devin auth login` first if the page says the CLI is no
 
 - The login is only ever sent to `server.codeium.com` or `api.devin.ai` over https. If your company
   uses another Devin host, add it with `WUKONG_DEVIN_API_HOSTS` (comma separated) before starting
-  the daemon.
+  the daemon; Wukong's network guard opens the same hosts, so nothing else needs configuring.
 - Devin has no public API for this, so it may change. If the page reports that the API may have
   changed, tell the Wukong maintainers.
 - Claude usage is not shown (Claude Code sign-in is not set up for it).
