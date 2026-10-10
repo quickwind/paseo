@@ -39,7 +39,7 @@ function isBinary(buffer) {
   return buffer.includes(0);
 }
 
-const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const { scope, dryRun } = parseArgs(process.argv.slice(2));
 const replacement = `@${scope}/`;
 
