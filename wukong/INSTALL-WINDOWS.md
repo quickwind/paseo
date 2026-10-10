@@ -143,6 +143,20 @@ wukong plugin install D:\plugins\<plugin>
 - Only Claude Code and Devin CLI exist as providers, so a plugin that adds a provider has no effect.
 - Plugins that bundle upstream's own extras (usage readers, other providers) are not included.
 
+### Bots, offline
+
+`paseo-bots-<version>.zip` is the Bots plugin with everything that connects to the internet removed
+(connected apps, OpenAI avatars, GitHub imports, remote MCP servers). It installs without git, npm or
+internet:
+
+```powershell
+Expand-Archive .\paseo-bots-0.2.0-offline.1.zip -DestinationPath D:\plugins
+wukong plugin install D:\plugins\paseo-bots-0.2.0-offline.1
+```
+
+Check the download first if you like: `(Get-FileHash .\paseo-bots-0.2.0-offline.1.zip).Hash` should equal the
+hash in the `.sha256` file. Skills import from a folder on the machine, not from GitHub.
+
 ## Update or remove
 
 To update, run the same install command with the newer tarballs, then restart the daemon.
