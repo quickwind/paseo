@@ -62,6 +62,18 @@ function registryArgs(registry) {
   return registry ? [`--registry=${registry}`] : [];
 }
 
+// On Windows npm is `npm.cmd`, which only a shell can start (spawning it directly gives no exit
+// code). Arguments are quoted by hand because a shell reads them.
+const isWindows = process.platform === "win32";
+const quote = (argument) =>
+  /[\s"&|<>^%]/u.test(argument) ? `"${argument.replaceAll('"', '\\"')}"` : argument;
+
+function runNpm(args, options) {
+  return isWindows
+    ? spawnSync(["npm", ...args.map(quote)].join(" "), { shell: true, ...options })
+    : spawnSync("npm", args, options);
+}
+
 function readManifest(tarball) {
   // Run inside the tarball's folder with its bare name: GNU tar (Git Bash on Windows) reads an
   // absolute `C:\\...` path as host:file.
@@ -74,13 +86,9 @@ function readManifest(tarball) {
 }
 
 function alreadyPublished({ name, version }, registry) {
-  const result = spawnSync(
-    "npm",
-    ["view", `${name}@${version}`, "version", ...registryArgs(registry)],
-    {
-      encoding: "utf8",
-    },
-  );
+  const result = runNpm(["view", `${name}@${version}`, "version", ...registryArgs(registry)], {
+    encoding: "utf8",
+  });
   return result.status === 0 && result.stdout.trim() === version;
 }
 
@@ -110,7 +118,7 @@ for (const name of PACKAGE_ORDER) {
   process.stdout.write(
     `publish ${manifest.name}@${manifest.version}${args.dryRun ? " (dry run)" : ""}\n`,
   );
-  const result = spawnSync("npm", publishArgs, { stdio: "inherit" });
+  const result = runNpm(publishArgs, { stdio: "inherit" });
   if (result.status !== 0) {
     throw new Error(
       `npm publish failed for ${manifest.name}@${manifest.version} (exit ${result.status}). ` +

@@ -35,12 +35,20 @@ test("publishes every package in dependency order, naming tarballs by absolute p
   const bin = path.join(work, "bin");
   mkdirSync(bin);
   const log = path.join(work, "calls.log");
-  const fakeNpm = path.join(bin, "npm");
-  writeFileSync(
-    fakeNpm,
-    `#!/bin/sh\nif [ "$1" = "view" ]; then exit 1; fi\necho "$@" >> "${log}"\n`,
-  );
-  chmodSync(fakeNpm, 0o755);
+  // On Windows the script has to be a batch file named npm.cmd, which is what the real npm is.
+  if (process.platform === "win32") {
+    writeFileSync(
+      path.join(bin, "npm.cmd"),
+      `@echo off\r\nif "%1"=="view" exit /b 1\r\necho %* >> "${log}"\r\n`,
+    );
+  } else {
+    const fakeNpm = path.join(bin, "npm");
+    writeFileSync(
+      fakeNpm,
+      `#!/bin/sh\nif [ "$1" = "view" ]; then exit 1; fi\necho "$@" >> "${log}"\n`,
+    );
+    chmodSync(fakeNpm, 0o755);
+  }
 
   // Relative --dir, as the workflow passes it.
   execFileSync("node", [script, "--dir", "dist-npm", "--scope", "acme", "--dry-run"], {
@@ -48,7 +56,7 @@ test("publishes every package in dependency order, naming tarballs by absolute p
     env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` },
   });
 
-  const calls = readFileSync(log, "utf8").trim().split("\n");
+  const calls = readFileSync(log, "utf8").trim().split(/\r?\n/u);
   assert.equal(calls.length, PACKAGES.length);
   calls.forEach((call, index) => {
     const tarball = call.split(" ")[1];
