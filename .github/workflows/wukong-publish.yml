@@ -134,7 +134,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: wukong-windows-built-tarballs
-          path: dist-npm/*.tgz
+          path: |
+            dist-npm/*.tgz
+            dist-npm/*.zip
           retention-days: 7
 
   publish:

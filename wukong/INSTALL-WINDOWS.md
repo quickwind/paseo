@@ -26,7 +26,17 @@ This takes about ten minutes the first time and leaves the seven `wukong-*.tgz` 
 
 ## Install
 
-Open PowerShell in the folder that holds the seven `.tgz` files.
+The build gives you one file, `wukong-<version>.zip`. It holds the seven `.tgz` packages, the
+install script and this guide. Unzip it, open PowerShell in that folder and run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\windows-update.ps1
+```
+
+That installs (or updates) everything and starts the daemon. The steps it takes are listed under
+[Update or remove](#update-or-remove), and you can type them by hand instead, as below.
+
+To install by hand, open PowerShell in the folder that holds the seven `.tgz` files.
 
 ```powershell
 $env:ONNXRUNTIME_NODE_INSTALL = "skip"   # skips a large voice download Wukong does not use

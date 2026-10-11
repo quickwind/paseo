@@ -71,8 +71,9 @@ node wukong/scripts/pack-local.mjs --out ../wukong-dist
 ```
 
 It checks out the last commit into a throwaway folder, applies the npm scope and the brand,
-installs, builds (including the web UI) and writes seven `wukong-*.tgz` files to `--out`. Nothing
-is published. Takes about ten minutes the first time. Then follow `wukong/INSTALL-WINDOWS.md`.
+installs, builds (including the web UI) and writes seven `wukong-*.tgz` files to `--out`, plus
+`wukong-<version>.zip`: the seven tarballs with `windows-update.ps1`, `windows-autostart.ps1` and
+`INSTALL-WINDOWS.md`, as one file to hand out. Nothing is published. Takes about ten minutes the first time. Then follow `wukong/INSTALL-WINDOWS.md`.
 
 - Only committed work is included. Commit your changes first.
 - Tarballs of an earlier build in `--out` are removed first, so the folder always holds one build.

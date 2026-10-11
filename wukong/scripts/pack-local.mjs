@@ -5,7 +5,9 @@
 // (commit first: uncommitted changes are not included).
 //
 // Usage: node wukong/scripts/pack-local.mjs --out <dir> [--scope wukong] [--work-dir <dir>] [--keep]
-//   --out       where the .tgz files go (required); tarballs of an earlier build there are removed
+//   --out       where the .tgz files and the .zip bundle go (required); the files of an earlier
+//               build there are removed. The bundle holds the seven tarballs, windows-update.ps1
+//               and INSTALL-WINDOWS.md: one file to hand out, unzip and run the script
 //   --scope     npm scope, giving @<scope>/cli, @<scope>/server, ... (default: wukong)
 //   --work-dir  where the throwaway checkout lives. Keep it short on Windows (default: a
 //               short folder under the system temp directory)
@@ -62,6 +64,11 @@ export function staleTarball(file, scope) {
   return file.startsWith(`${scope}-`) && file.endsWith(".tgz");
 }
 
+/** An earlier bundle of this scope, such as `wukong-0.11.2-wukong.1.zip`. */
+export function staleBundle(file, scope) {
+  return file.startsWith(`${scope}-`) && file.endsWith(".zip");
+}
+
 const isWindows = process.platform === "win32";
 
 function quote(argument) {
@@ -91,6 +98,24 @@ function capture(command, args, options = {}) {
     throw new Error(`Command failed (exit ${result.status}): ${command} ${args.join(" ")}`);
   }
   return result.stdout.trim();
+}
+
+/**
+ * Zips `members` (names inside `directory`) into `zipFile`. Node has no zip writer, so this uses
+ * the system's: `tar` (bsdtar on Windows 10+ and macOS writes zip with -a) or else `zip`.
+ */
+export function makeZip(zipFile, directory, members) {
+  rmSync(zipFile, { force: true });
+  const attempts = [
+    ["tar", ["-a", "-cf", zipFile, "-C", directory, ...members]],
+    ["zip", ["-q", zipFile, ...members]],
+  ];
+  for (const [command, args] of attempts) {
+    const result = spawnSync(command, args, { cwd: directory, encoding: "utf8" });
+    if (!result.error && result.status === 0 && existsSync(zipFile)) return;
+    rmSync(zipFile, { force: true });
+  }
+  throw new Error("Could not write the zip: neither `tar -a` nor `zip` is available");
 }
 
 function removeTree(directory) {
@@ -158,12 +183,30 @@ export function main(argv) {
     mkdirSync(out, { recursive: true });
     // Tarballs of an earlier build in the same folder would be installed alongside the new ones.
     for (const file of readdirSync(out)) {
-      if (staleTarball(file, args.scope)) rmSync(path.join(out, file), { force: true });
+      if (staleTarball(file, args.scope) || staleBundle(file, args.scope)) {
+        rmSync(path.join(out, file), { force: true });
+      }
     }
     const tarballs = readdirSync(packed).filter((file) => file.endsWith(".tgz"));
     for (const file of tarballs) cpSync(path.join(packed, file), path.join(out, file));
+
+    // One file to hand out: the tarballs with the script that installs them and the guide.
+    const stage = path.join(packed, "bundle");
+    mkdirSync(stage, { recursive: true });
+    const helpers = [
+      "wukong/scripts/windows-update.ps1",
+      "wukong/scripts/windows-autostart.ps1",
+      "wukong/INSTALL-WINDOWS.md",
+    ];
+    for (const file of tarballs) cpSync(path.join(packed, file), path.join(stage, file));
+    for (const file of helpers)
+      cpSync(path.join(work, file), path.join(stage, path.basename(file)));
+    const bundle = `${args.scope}-${version}.zip`;
+    makeZip(path.join(out, bundle), stage, [...tarballs, ...helpers.map((f) => path.basename(f))]);
+
     process.stdout.write(`\nPacked ${version}: ${tarballs.length} tarballs in ${out}\n`);
     for (const file of tarballs) process.stdout.write(`  ${file}\n`);
+    process.stdout.write(`Bundle for handing out: ${path.join(out, bundle)}\n`);
   } finally {
     if (args.keep) {
       process.stdout.write(`Kept the checkout at ${work}\n`);
