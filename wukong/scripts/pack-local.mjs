@@ -174,6 +174,8 @@ export function main(argv) {
 
     run(node, ["wukong/scripts/rename-npm-scope.mjs", "--scope", args.scope], inWork);
     run(node, ["wukong/scripts/brand.mjs"], inWork);
+    // Upstream's web UI build cannot start npm on Windows; fixed in this checkout only.
+    run(node, ["wukong/scripts/build-fixes.mjs"], inWork);
 
     run(
       node,

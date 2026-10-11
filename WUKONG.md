@@ -232,6 +232,12 @@ to an unofficial Devin endpoint is acceptable under the company's agreement with
   only `AGENTS.md` should open `CLAUDE.md`, then this file. `git status` stays clean. Do not turn
   `AGENTS.md` into a regular file (that changes an upstream file), and do not set
   `core.symlinks=true` without the privilege (checkout then fails).
+- Windows builds: `npm` is `npm.cmd`, which only a shell can start. Upstream's
+  `scripts/build-daemon-web-ui.mjs` spawns it without one and fails on Windows ("spawn npm
+  ENOENT"), so `wukong/scripts/build-fixes.mjs` patches it in the throwaway pack checkout. Add a
+  rule there (not an upstream edit) for the next upstream script that breaks on Windows. GitHub's
+  Windows runner runs steps in Git Bash, whose GNU tar reads `C:\...` as host:file: give `tar` bare
+  names and a `cwd`. **Look at CI after every push**; the Windows job once failed for days unseen.
 - Shell: macOS `sed -i` needs `''`; zsh does not word-split `$VAR`; `npx oxlint` fails outside the
   repo root (config), so use the npm scripts.
 
