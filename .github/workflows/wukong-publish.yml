@@ -193,6 +193,11 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Publishing version $version under @$NPM_SCOPE"
 
+      # Apache-2.0 §4: every package ships upstream's LICENSE and a NOTICE saying it is a modified
+      # version of Paseo.
+      - name: Add the license and notice
+        run: node wukong/scripts/add-license.mjs
+
       # Packing builds each package; the server's prepack builds the web UI.
       - name: Pack
         run: |
@@ -216,6 +221,13 @@ jobs:
           test -f "$lib/server/dist/server/web-ui/index.html"
           # The web UI carries the brand.
           grep -q '"short_name": "Wukong"' "$lib/server/dist/server/web-ui/manifest.json"
+          # Every package carries the license and the notice, and says Apache-2.0.
+          for p in highlight relay protocol client plugin server cli; do
+            test -f "$lib/$p/LICENSE"
+            grep -q "Apache License" "$lib/$p/LICENSE"
+            grep -q "modified version of Paseo" "$lib/$p/NOTICE"
+            test "$(node -p "require('$lib/$p/package.json').license")" = "Apache-2.0"
+          done
           # Nothing may still point at the upstream scope.
           if grep -rl "@getpaseo/" "$lib"; then
             echo "A tarball still references the upstream @getpaseo scope" >&2

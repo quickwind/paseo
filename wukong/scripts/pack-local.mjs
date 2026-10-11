@@ -142,6 +142,9 @@ export function main(argv) {
     // The app is not published, and its Expo config only accepts x.y.z or x.y.z-beta.N.
     run("npm", ["pkg", "set", `version=${core}`, `--workspace=@${args.scope}/app`], inWork);
 
+    // Apache-2.0 §4: every package ships upstream's LICENSE and a NOTICE.
+    run(node, ["wukong/scripts/add-license.mjs"], inWork);
+
     const packed = path.join(work, "dist-npm");
     mkdirSync(packed, { recursive: true });
     for (const name of PACKAGES) {

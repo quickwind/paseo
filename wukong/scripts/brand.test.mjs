@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { applyBrand } from "./brand.mjs";
+import { applyBrand, ATTRIBUTION_TEXT } from "./brand.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -16,6 +16,7 @@ const TOUCHED = [
   "packages/app/public/index.html",
   "packages/app/app.config.js",
   "packages/app/src/components/icons/paseo-logo.tsx",
+  "packages/app/src/screens/settings-screen.tsx",
   "packages/app/assets/images",
   "packages/app/public",
   "packages/cli/package.json",
@@ -51,6 +52,19 @@ test("brands the name, metadata, logo and CLI alias", () => {
   assert.deepEqual(JSON.parse(read(root, "packages/cli/package.json")).bin, {
     wukong: "bin/wukong",
   });
+});
+
+test("the About page says whose work this is, once, even if the brand runs twice", () => {
+  const root = copyTree();
+  const screen = "packages/app/src/screens/settings-screen.tsx";
+  assert.equal(read(root, screen).includes(ATTRIBUTION_TEXT), false);
+  applyBrand({ root });
+  applyBrand({ root });
+  const text = read(root, screen);
+  assert.equal(text.split(ATTRIBUTION_TEXT).length - 1, 1);
+  assert.match(ATTRIBUTION_TEXT, /modified version of Paseo.*Mohamed Boudra.*Apache License 2\.0/);
+  // Inside the About card, ahead of the (hidden in Wukong) What's new row.
+  assert.ok(text.indexOf(ATTRIBUTION_TEXT) < text.indexOf("<WhatsNewRow />"));
 });
 
 test("is idempotent", () => {

@@ -17,6 +17,10 @@ const REPO_ROOT = path.resolve(here, "..", "..");
 const OVERLAY_ROOT = path.join(here, "..", "brand", "files");
 const BRAND = "Wukong";
 const UPSTREAM_NAME = /\bPaseo\b/gu;
+const ATTRIBUTION_TITLE = "License";
+// Shown on the About page. Keep it free of braces and of `$`: it goes into JSX through a regexp.
+export const ATTRIBUTION_TEXT =
+  "Wukong is a modified version of Paseo (github.com/getpaseo/paseo), Copyright (c) 2025-present Mohamed Boudra, licensed under the Apache License 2.0.";
 
 // Source files replaced wholesale. The hash is the upstream version the replacement was
 // written against; a different upstream file means the replacement needs another look.
@@ -69,6 +73,22 @@ function textRules(root) {
       pattern: /name: "Paseo( Debug)?"/gu,
       replacement: `name: "${BRAND}$1"`,
     },
+    // Apache-2.0 asks that a modified version says whose work it is. The About page names Paseo
+    // and its license, in English whatever the UI language, since it is a legal statement.
+    {
+      file: "packages/app/src/screens/settings-screen.tsx",
+      pattern: /^( *)<WhatsNewRow \/>$/mu,
+      replacement: [
+        "$1<View style={settingsStyles.row}>",
+        "$1  <View style={settingsStyles.rowContent}>",
+        `$1    <Text style={settingsStyles.rowTitle}>${ATTRIBUTION_TITLE}</Text>`,
+        `$1    <Text style={settingsStyles.rowHint}>${ATTRIBUTION_TEXT}</Text>`,
+        "$1  </View>",
+        "$1</View>",
+        "$1<WhatsNewRow />",
+      ].join("\n"),
+      applied: ATTRIBUTION_TEXT,
+    },
   ];
 }
 
@@ -78,10 +98,13 @@ function applyTextRule(root, rule, dryRun, log) {
     throw new Error(`Brand rule target is missing: ${rule.file}`);
   }
   const text = readFileSync(target, "utf8");
+  // A rule that adds text the pattern still matches afterwards must not add it twice.
+  if (rule.applied && text.includes(rule.applied)) return;
   const matches = text.match(rule.pattern)?.length ?? 0;
   if (matches === 0) {
-    // Already branded (a second run) is fine; a target that never had the name is not.
-    if (rule.optional || text.includes(BRAND)) return;
+    // Already branded (a second run) is fine; a target that never had the name is not. A rule
+    // for a file that already mentions Wukong in its own comments names what it adds in `applied`.
+    if (rule.optional || text.includes(rule.applied ?? BRAND)) return;
     throw new Error(`Brand rule found nothing to replace in ${rule.file} (${rule.pattern})`);
   }
   log(`text    ${rule.file} (${matches})`);
