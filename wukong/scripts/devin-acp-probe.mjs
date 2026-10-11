@@ -42,13 +42,14 @@ const clip = (value, max = 600) => {
 };
 
 // Field paths whose name looks like usage/context information, with a short value.
-function interestingFields(value, prefix = "") {
-  if (value === null || typeof value !== "object") return [];
-  return Object.entries(value).flatMap(([key, child]) => {
+function interestingFields(value, prefix = "", found = []) {
+  if (value === null || typeof value !== "object") return found;
+  for (const [key, child] of Object.entries(value)) {
     const at = prefix ? `${prefix}.${key}` : key;
-    const own = INTERESTING.test(key) ? [`${at} = ${clip(child, 160)}`] : [];
-    return [...own, ...interestingFields(child, at)];
-  });
+    if (INTERESTING.test(key)) found.push(`${at} = ${clip(child, 160)}`);
+    interestingFields(child, at, found);
+  }
+  return found;
 }
 
 const counts = new Map();
