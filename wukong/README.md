@@ -4,6 +4,9 @@ Wukong is Paseo for company machines: Claude Code and Devin CLI only, the compan
 only forge, and no traffic from Paseo itself to cloud services. It is the `wukong` branch of this
 fork. Everything Wukong adds lives in a few directories so that syncing with upstream stays cheap.
 
+Maintainers and AI agents: read [WUKONG.md](../WUKONG.md) first. It holds the rules (keep upstream edits
+minimal), the design decisions, the checks to run, and the known gaps. This file covers set-up.
+
 | Where                            | What                                                                          |
 | -------------------------------- | ----------------------------------------------------------------------------- |
 | `packages/server/src/wukong/`    | Daemon policy: egress guard, providers, plugins, GitLab adapter, clone policy |
