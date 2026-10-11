@@ -12,6 +12,7 @@ import {
   parseArgs,
   staleBundle,
   staleTarball,
+  zipAttempts,
 } from "./pack-local.mjs";
 
 test("parses the options and defaults the scope to wukong", () => {
@@ -59,19 +60,44 @@ test("only bundles of the same scope count as leftovers", () => {
   assert.equal(staleBundle("wukong-cli-0.11.2-wukong.1.tgz", "wukong"), false);
 });
 
-// Lists a zip with whichever tool the machine has (bsdtar reads zip; GNU tar does not).
+// Lists a zip with whichever tool the machine has. bsdtar reads zip; GNU tar does not, and on
+// Windows `tar` may be GNU tar from Git Bash, so the system's tar.exe is tried first and the zip is
+// named relative to its folder (GNU tar reads `C:\\...` as host:file).
 function zipEntries(zipFile) {
+  const systemTar =
+    process.platform === "win32"
+      ? path.win32.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe")
+      : "tar";
+  const options = { encoding: "utf8", cwd: path.dirname(zipFile) };
+  const name = path.basename(zipFile);
   for (const [command, args] of [
-    ["tar", ["-tf", zipFile]],
-    ["unzip", ["-Z1", zipFile]],
+    [systemTar, ["-tf", name]],
+    ["tar", ["-tf", name]],
+    ["unzip", ["-Z1", name]],
   ]) {
-    const result = spawnSync(command, args, { encoding: "utf8" });
+    const result = spawnSync(command, args, options);
     if (!result.error && result.status === 0) {
       return result.stdout.split(/\r?\n/u).filter(Boolean);
     }
   }
   throw new Error("no tool to list a zip");
 }
+
+test("zip attempts: Windows tries its own tar first and PowerShell last, others never PowerShell", () => {
+  const input = { zipFile: "C:\\out\\a.zip", members: ["a.tgz", "it's.md"] };
+  const win = zipAttempts({ ...input, platform: "win32", systemRoot: "C:\\Windows" });
+  assert.equal(win[0][0], "C:\\Windows\\System32\\tar.exe");
+  assert.deepEqual(win.map(([command]) => command).slice(1), ["tar", "zip", "powershell"]);
+  const script = win.at(-1)[1].at(-1);
+  assert.match(
+    script,
+    /Compress-Archive -LiteralPath 'a\.tgz','it''s\.md' -DestinationPath 'C:\\out\\a\.zip' -Force/,
+  );
+  assert.deepEqual(
+    zipAttempts({ ...input, platform: "darwin" }).map(([command]) => command),
+    ["tar", "zip"],
+  );
+});
 
 test("makeZip puts the given files at the top of one zip, and replaces an old one", () => {
   const directory = mkdtempSync(path.join(tmpdir(), "wukong-zip-"));

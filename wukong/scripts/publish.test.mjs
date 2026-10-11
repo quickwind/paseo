@@ -16,13 +16,13 @@ function makeTarball(directory, name) {
     path.join(staging, "package/package.json"),
     JSON.stringify({ name: `@acme/${name}`, version: "1.0.0-wukong.1" }),
   );
-  execFileSync("tar", [
-    "-czf",
-    path.join(directory, `acme-${name}-1.0.0-wukong.1.tgz`),
-    "-C",
-    staging,
-    "package",
-  ]);
+  // Relative paths from inside the folder: GNU tar (Git Bash on Windows) reads `C:\\...` as host:file.
+  const relativeStaging = path.relative(directory, staging).split(path.sep).join("/");
+  execFileSync(
+    "tar",
+    ["-czf", `acme-${name}-1.0.0-wukong.1.tgz`, "-C", relativeStaging, "package"],
+    { cwd: directory },
+  );
 }
 
 test("publishes every package in dependency order, naming tarballs by absolute path", () => {

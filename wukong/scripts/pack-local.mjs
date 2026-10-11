@@ -101,21 +101,47 @@ function capture(command, args, options = {}) {
 }
 
 /**
- * Zips `members` (names inside `directory`) into `zipFile`. Node has no zip writer, so this uses
- * the system's: `tar` (bsdtar on Windows 10+ and macOS writes zip with -a) or else `zip`.
+ * The commands that may write the zip, best first. Node has no zip writer. On Windows `tar` can be
+ * GNU tar (Git for Windows puts its Unix tools on PATH), which cannot write zip and misreads
+ * `C:\\...` as host:file, so the system's bsdtar comes first and PowerShell is the last resort.
  */
+export function zipAttempts({
+  platform = process.platform,
+  systemRoot = process.env.SystemRoot,
+  zipFile,
+  members,
+}) {
+  const tarArgs = ["-a", "-cf", zipFile, ...members];
+  const attempts = [];
+  if (platform === "win32") {
+    attempts.push([path.win32.join(systemRoot || "C:\\Windows", "System32", "tar.exe"), tarArgs]);
+  }
+  attempts.push(["tar", tarArgs], ["zip", ["-q", zipFile, ...members]]);
+  if (platform === "win32") {
+    const quoted = (text) => `'${text.replaceAll("'", "''")}'`;
+    attempts.push([
+      "powershell",
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        `Compress-Archive -LiteralPath ${members.map(quoted).join(",")} ` +
+          `-DestinationPath ${quoted(zipFile)} -Force`,
+      ],
+    ]);
+  }
+  return attempts;
+}
+
+/** Zips `members` (names inside `directory`) into `zipFile`, with them at the top of the zip. */
 export function makeZip(zipFile, directory, members) {
   rmSync(zipFile, { force: true });
-  const attempts = [
-    ["tar", ["-a", "-cf", zipFile, "-C", directory, ...members]],
-    ["zip", ["-q", zipFile, ...members]],
-  ];
-  for (const [command, args] of attempts) {
+  for (const [command, args] of zipAttempts({ zipFile, members })) {
     const result = spawnSync(command, args, { cwd: directory, encoding: "utf8" });
     if (!result.error && result.status === 0 && existsSync(zipFile)) return;
     rmSync(zipFile, { force: true });
   }
-  throw new Error("Could not write the zip: neither `tar -a` nor `zip` is available");
+  throw new Error("Could not write the zip: none of tar, zip or PowerShell worked");
 }
 
 function removeTree(directory) {

@@ -91,7 +91,8 @@ test("fails loudly when a text target loses the name", () => {
 test("a Windows checkout with CRLF line endings is not an upstream change", () => {
   const root = copyTree();
   const logo = path.join(root, "packages/app/src/components/icons/paseo-logo.tsx");
-  writeFileSync(logo, readFileSync(logo, "utf8").replaceAll("\n", "\r\n"));
+  // A Windows checkout may already be CRLF: go through LF first so the file is CRLF, not CR CR LF.
+  writeFileSync(logo, readFileSync(logo, "utf8").replaceAll("\r\n", "\n").replaceAll("\n", "\r\n"));
   applyBrand({ root });
   assert.match(read(root, "packages/app/src/components/icons/paseo-logo.tsx"), /WUKONG_LOGO/);
 });

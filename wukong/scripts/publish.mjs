@@ -63,7 +63,10 @@ function registryArgs(registry) {
 }
 
 function readManifest(tarball) {
-  const json = execFileSync("tar", ["-xzOf", tarball, "package/package.json"], {
+  // Run inside the tarball's folder with its bare name: GNU tar (Git Bash on Windows) reads an
+  // absolute `C:\\...` path as host:file.
+  const json = execFileSync("tar", ["-xzOf", path.basename(tarball), "package/package.json"], {
+    cwd: path.dirname(tarball),
     maxBuffer: 16 * 1024 * 1024,
   }).toString("utf8");
   const manifest = JSON.parse(json);
