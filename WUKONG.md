@@ -151,6 +151,14 @@ you add one, add it to the table below. `rg "Wukong:"` finds every marker.
   `windowsHide` is set; Git for Windows checks out CRLF (hash checks must ignore line endings);
   `npm` is a `.cmd` (needs a shell); path length limits (260) argue for short build folders;
   PowerShell redirection writes UTF-16.
+- Windows and symlinks: upstream tracks 7 symlinks, including `AGENTS.md` (to `CLAUDE.md`) and
+  `packages/server/AGENTS.md`. Git for Windows without symlink rights (the default, and no admin
+  here) checks them out as small text files holding the target path, so `AGENTS.md` is a one-line
+  file reading `CLAUDE.md`. That is harmless: the content is in `CLAUDE.md`, which carries the
+  pointer to this file, and Claude Code and Devin CLI both read `CLAUDE.md`. An agent that reads
+  only `AGENTS.md` should open `CLAUDE.md`, then this file. `git status` stays clean. Do not turn
+  `AGENTS.md` into a regular file (that changes an upstream file), and do not set
+  `core.symlinks=true` without the privilege (checkout then fails).
 - Shell: macOS `sed -i` needs `''`; zsh does not word-split `$VAR`; `npx oxlint` fails outside the
   repo root (config), so use the npm scripts.
 
