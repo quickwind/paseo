@@ -169,14 +169,81 @@ files you changed**, never the whole suite, use the npm scripts for lint and for
    earlier tarballs there), then install them into a temp `--prefix` and run `wukong --version`.
 6. Commit with a message that says why; push to `origin wukong`.
 
-## Syncing with upstream
+## Syncing with upstream: the SOP
 
-`wukong-sync-upstream.yml` runs weekly: fast-forwards `main` to upstream, merges it into
-`sync/upstream-<date>`, builds, tests, and opens a PR (or an issue naming conflicting files). To do
-it by hand: `git fetch upstream && git merge upstream/main` with `git config rerere.enabled true`.
-After a merge: `rg "Wukong:"` still finds every hook, the footprint script passes, and the egress
-and provider tests pass. Watch upstream's `forge-registry`, `workspace-git-service`,
-`plugins/index.ts`, `session.ts`, the Add Project flow and `usage/`, where our hooks sit.
+**Cadence.** Weekly, and before every release. Do not let it drift past a month: the cost grows
+with the gap. Reference points: the first sync (92 upstream commits) had 4 text conflicts and
+took most of a day to check; a later one (13 commits, 100 files) merged clean and only one file
+we touch had changed upstream.
+
+**Who does what.** `wukong-sync-upstream.yml` (Mondays, or run it by hand) mirrors `main` to
+upstream, merges upstream into `sync/upstream-<date>`, builds, runs the Wukong checks and opens a
+PR, or opens an issue naming the conflicting files. A green PR is **not** a reviewed merge. The
+workflow cannot judge the things in step 4; a person or agent must.
+
+**Rules that never bend**
+
+- Merge with a **merge commit**. Never rebase `wukong` onto upstream and never squash-merge a
+  sync: either one erases the merge base and the next sync re-fights every old conflict.
+- Merge in a throwaway branch or worktree, never straight into `wukong`. Nothing lands until
+  step 5 passes. `wukong` stays unchanged until then, which is also the rollback.
+- Never touch the Paseo daemon on port 6767, and keep test daemons on their own home and port.
+- Take upstream's side, then re-apply our hook. Never "keep ours" for a whole upstream file.
+
+**Steps**
+
+1. **Look first.** `git fetch upstream --tags`, `git config rerere.enabled true`. See the size
+   (`git log --oneline wukong..upstream/main`) and try the merge without making it:
+   `git merge-tree --write-tree --name-only wukong upstream/main`. Clean prints a tree id and
+   exits 0; conflicts list the files.
+2. **Merge in a worktree.**
+   `git worktree add -b sync/upstream-<date> ../wk-sync wukong && cd ../wk-sync && git merge upstream/main`.
+3. **Resolve conflicts.** Take upstream's version of the file, then re-apply our hook: one to a few
+   lines with a `Wukong:` marker (the table above says what each hook is for). If upstream moved
+   or rewrote what a hook sat on (the forge registry, plugin loader, Add Project flow, usage), find
+   the new place and go back down the ladder. Resolutions are remembered by rerere.
+4. **Review what a clean merge can still get wrong.**
+   - Hooks intact: `node wukong/scripts/upstream-footprint.mjs` passes, and the file count and
+     `rg "Wukong:"` still match the table above. A lost marker means a lost hook.
+   - Files we hook that upstream also changed:
+     `comm -12 <(git diff --name-only <old-base> upstream/main | sort) <(git diff --name-only <old-base> wukong | sort)`.
+     Read those diffs; they are where auto-merge is most likely to be wrong.
+   - **New outbound traffic.** The guard stops the daemon, not the browser or child processes. In
+     what upstream added: `git diff -U0 <old-base> upstream/main -- packages ':!packages/website' ':!*.test.*' ':!*.md' ':!packages/app/src/i18n' | rg '^\+' | rg -o 'https?://[^"` ]+|fetch\(|new WebSocket\('`.
+     Look for new hosts, update checks, telemetry, relay, Hub, push, speech downloads, registries.
+     Then load the built web UI in a browser against a temp daemon and confirm no request leaves
+     localhost.
+   - **New providers, built-in plugins, usage sources, forges.** Providers and bundled plugins are
+     allowlists (`WUKONG_PROVIDER_IDS`, `WUKONG_BUILTIN_PLUGINS`), so new ones stay off; confirm
+     they did, and that nothing new bypasses the allowlist or the `ForgeRegistry`.
+   - **Contracts we lean on.** `glab-runner.test.ts` fails if upstream changes a `glab` command
+     line it issues. Also read upstream's changes to the plugin SDK (`UsageSourceRegistration`,
+     RPC timeouts), `usage/window-bar.tsx` (`runsOutAt`) and `usage/queries.ts`, the Add Project
+     flow, `supervisor.ts` and the provider registry.
+   - Version bump? Check `pack-local` and the app config still accept the new version form.
+5. **Verify**, in the worktree: `node scripts/npm-retry.mjs ci --ignore-scripts`, `npm run postinstall`,
+   `npm run build:server` (it also compiles `packages/server/scripts`), `npm run typecheck`,
+   `npm run lint`, `npm run format:check`, `node --test "wukong/scripts/*.test.mjs"`, the Wukong
+   tests (`packages/server`: `src/wukong`; `plugins`: `wukong-gitlab wukong-devin-usage`;
+   `packages/app`: `src/wukong src/usage`), and the footprint script. Do not run the whole suite.
+6. **Package and smoke test.** `node wukong/scripts/pack-local.mjs --out <dir>`, install the
+   tarballs into a temp `--prefix`, then start that daemon on a temp home and port. Check:
+   `wukong --version`; only `claude` and `devin` providers; `wukong-gitlab` and
+   `wukong-devin-usage` loaded; no `Wukong blocked` line in `daemon.log` at startup; the page
+   title is Wukong. Anything you changed by hand in step 3 gets a real run, not just tests.
+7. **Land it.** Push the sync branch and merge it into `wukong` with a merge commit (PR, or a
+   local `--no-ff` merge). Then fast-forward nothing else: `main` is the workflow's to mirror.
+8. **Finish.** Tag the result (`wukong-<date>`, annotated, naming the upstream version), repack
+   into `~/wukong-dist` with the same `pack-local` command, update the upstream-files table here
+   if the footprint changed, and tell the team to update with `windows-update.ps1`.
+
+**If it goes wrong.** More conflicts than expected, or upstream rewrote a subsystem we hook: stop,
+leave `wukong` alone, and settle it in the worktree; never force-push. A build failure that is
+upstream's own: fix it with the smallest marked change and consider sending it upstream. A step
+you could not run goes into "Known gaps" below; do not report the sync as verified without it.
+
+**What the workflow covers.** Steps 1, 2, most of 5 (brand tests, build, typecheck, lint, the
+Wukong tests, the footprint check) and opening the PR or issue. It does not do 3, 4, 6, 7 or 8.
 
 ## Known gaps (as of this writing)
 

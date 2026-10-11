@@ -92,9 +92,12 @@ jobs:
           npm run postinstall
           npm run build:server
           npm run typecheck
+          npm run lint
           (cd packages/server && npx vitest run --bail=1 src/wukong)
-          (cd plugins && npx vitest run --bail=1 wukong-gitlab)
-          (cd packages/app && npx vitest run --bail=1 src/wukong)
+          (cd plugins && npx vitest run --bail=1 wukong-gitlab wukong-devin-usage)
+          (cd packages/app && npx vitest run --bail=1 src/wukong src/usage)
+          # Still within budget, every touched upstream file still carries its Wukong marker.
+          node wukong/scripts/upstream-footprint.mjs
 
       - name: Open a pull request
         if: steps.merge.outputs.state == 'merged'
