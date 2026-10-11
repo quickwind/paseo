@@ -136,6 +136,43 @@ you add one, add it to the table below. `rg "Wukong:"` finds every marker.
 - **Web UI:** served by the daemon, on by default. English only: Wukong's added strings are not in
   the translation tables, to keep i18n files untouched.
 
+## License and attribution
+
+Paseo is Apache-2.0, Copyright (c) 2025-present Mohamed Boudra (`LICENSE` at the repo root, no
+`NOTICE` upstream). Modifying, renaming and using it inside the company is allowed. This is a
+technical reading, not legal advice; have the company's legal team confirm before any external
+distribution.
+
+What we do about the conditions of §4 and §6:
+
+- **Copy of the license (§4a):** `wukong/scripts/add-license.mjs` runs at pack time (in
+  `pack-local.mjs` and the publish workflow) and puts upstream's `LICENSE` and a `NOTICE` in each of
+  the seven packages and sets `license: Apache-2.0`. It refuses if `LICENSE` stops being Apache 2.0.
+  The workflow's smoke test checks the installed packages. Without it the tarballs ship no license.
+- **Notice of changes (§4b):** every modified upstream file carries a `Wukong` comment
+  (`upstream-footprint.mjs` enforces it) and git history shows the rest. The `NOTICE` summarises
+  the changes.
+- **Keep notices (§4c):** do not remove or rewrite upstream copyright, license or attribution
+  text. The brand step only touches UI strings, icons and metadata in a throwaway checkout.
+- **Attribution in the product:** a brand rule adds a License row to the About page ("Wukong is a
+  modified version of Paseo ... Apache License 2.0"). The rule fails the build if its anchor
+  moves, and a test checks it appears once.
+- **Trademarks (§6):** the product name, logo and icons are Wukong's own; do not reintroduce
+  Paseo's logo or name as the product's. Internal identifiers (`PASEO_*`, `~/.paseo`) are
+  technical and stay for cheap merges.
+- **Third-party code** (npm dependencies, bundled web UI libraries) keeps its own licenses. We add
+  none and remove none. `python-gitlab` (LGPL) is installed separately and run as its own program,
+  never bundled or linked.
+
+Obligations apply on redistribution. Internal use is not that; handing tarballs to contractors or
+another company, or publishing to a public npm registry, is. Before either: legal review, the
+LICENSE and NOTICE in the tarballs (check them), and a look at the open points below.
+
+Open points for the company to decide: who owns copyright in Wukong's own additions and whether to
+add a company notice (AI-assisted work, such as the logo artwork, has unsettled copyright status);
+whether a public name "Wukong" needs a trademark check; and whether the Devin usage plugin's call
+to an unofficial Devin endpoint is acceptable under the company's agreement with Cognition.
+
 ## Lessons that cost time (do not relearn them)
 
 - `npm run typecheck:server` does **not** compile `packages/server/scripts/`. Also run
