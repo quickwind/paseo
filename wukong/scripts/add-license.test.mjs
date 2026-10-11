@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { addLicense, NOTICE, PACKAGES } from "./add-license.mjs";
+import { addLicense, buildNotice, NOTICE, PACKAGES } from "./add-license.mjs";
 
 const APACHE = "Copyright (c) someone\n\n  Apache License\n  Version 2.0, January 2004\n";
 
@@ -81,5 +81,25 @@ test("refuses when LICENSE is missing, is not Apache 2.0, or a package claims an
     } finally {
       cleanup();
     }
+  }
+});
+
+test("carries over a NOTICE that upstream adds later (Apache-2.0 4d), after ours", () => {
+  const { root, cleanup } = checkout();
+  try {
+    writeFileSync(path.join(root, "NOTICE"), "Paseo\nIncludes software from Example Corp.\n");
+    addLicense({ root });
+    for (const name of PACKAGES) {
+      const text = readFileSync(path.join(root, "packages", name, "NOTICE"), "utf8");
+      assert.ok(text.startsWith(NOTICE));
+      assert.match(
+        text,
+        /Notice carried over from Paseo's NOTICE file:\n\nPaseo\nIncludes software from Example Corp\./,
+      );
+    }
+    assert.equal(buildNotice("  \n"), NOTICE);
+    assert.equal(buildNotice(undefined), NOTICE);
+  } finally {
+    cleanup();
   }
 });

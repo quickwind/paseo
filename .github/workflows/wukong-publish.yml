@@ -47,6 +47,11 @@ jobs:
       - name: Brand and release script tests
         run: node --test "wukong/scripts/*.test.mjs"
 
+      # Publishing stops if anything we ship needs a license we must not distribute under
+      # (GPL, AGPL, SSPL, BUSL, unlicensed). `review` entries are listed but do not stop it.
+      - name: Dependency licenses
+        run: node wukong/scripts/license-audit.mjs
+
       # --ignore-scripts skips native builds; the root postinstall applies patches/ that the
       # web UI requires.
       - name: Install dependencies

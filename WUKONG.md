@@ -168,6 +168,42 @@ Obligations apply on redistribution. Internal use is not that; handing tarballs 
 another company, or publishing to a public npm registry, is. Before either: legal review, the
 LICENSE and NOTICE in the tarballs (check them), and a look at the open points below.
 
+### Rules for every change
+
+Check these before you commit anything that adds code, a dependency, a file or an asset. They are
+what keeps the sections above true.
+
+1. **Never remove or edit upstream's legal text.** `LICENSE`, copyright lines, SPDX or license
+   headers and attribution wording stay as upstream has them. In a merge conflict over them, take
+   upstream's. If upstream adds a `NOTICE`, `add-license.mjs` already carries it into ours; if it
+   changes the license itself, stop and ask (the script refuses to pack).
+2. **A new dependency (npm or Python, or a vendored library, font, icon or image) needs its
+   license looked at first.** Run `node wukong/scripts/license-audit.mjs` (everything we ship;
+   `--since <ref>` for just what a change added). `blocked` means GPL, AGPL, SSPL, BUSL,
+   non-commercial or unlicensed: do not add it. `review` (LGPL, MPL, EPL, CC-BY, unknown, vendor
+   terms) needs a person's decision, written down under "Known gaps". Permissive (MIT, ISC, BSD,
+   Apache-2.0) is fine. Add dependencies the normal way; do not copy a library's source into the
+   repo. If you must vendor, keep its LICENSE beside it and add it to the NOTICE.
+3. **Code from somewhere else** (a GitHub project, a blog, a forum answer, another tool's output)
+   is not ours to paste. Reading a project to learn a protocol and writing your own code is fine;
+   that is how the Devin usage plugin was written. Copying code is fine only if its license is
+   permissive and compatible: keep its copyright and license header and say where it came from
+   in the file. If you do not know the license, do not copy it.
+4. **Assets must be ours or licensed for this use.** The logo, icons, fonts and images in
+   `wukong/brand/files` must not be Paseo's, nor another party's artwork, characters or
+   trademarks. Say where a new asset came from (who made it, or its license) in the commit
+   message. Never use Paseo's name or logo as the product's identity; mentioning it to credit it
+   is fine and is what the About page does.
+5. **Do not bundle or redistribute software with its own terms.** Claude Code, the Claude Agent
+   SDK, Devin CLI, `git` and `python-gitlab` are installed by the user or by npm from its own
+   source. Never put their binaries in our tarballs. A third-party plugin you hand to others
+   keeps its own LICENSE with it.
+6. **Do not weaken the notices.** Do not drop `LICENSE` or `NOTICE` from the packages, the
+   `Apache-2.0` field, the About page row, or the smoke-test checks for them. A test failing on
+   them is the point.
+7. **New outward-facing behaviour** (publishing, sharing tarballs outside the company, a public
+   registry) is a decision for the maintainer and legal, not a code change: see below.
+
 Open points for the company to decide: who owns copyright in Wukong's own additions and whether to
 add a company notice (AI-assisted work, such as the logo artwork, has unsettled copyright status);
 whether a public name "Wukong" needs a trademark check; and whether the Devin usage plugin's call
@@ -212,7 +248,11 @@ files you changed**, never the whole suite, use the npm scripts for lint and for
    daemon; do not restart it) and not `6899` if someone is using it.
 5. Packaging: `node wukong/scripts/pack-local.mjs --out ~/wukong-dist` (one batch only; it clears
    earlier tarballs there), then install them into a temp `--prefix` and run `wukong --version`.
-6. Commit with a message that says why; push to `origin wukong`.
+6. If you added a dependency, a copied snippet, a file from elsewhere or an asset: apply "Rules for
+   every change" under License and attribution, and run
+   `node wukong/scripts/license-audit.mjs` (exit 1 means something shipped is `blocked`).
+7. Commit with a message that says why (and where an asset or snippet came from); push to
+   `origin wukong`.
 
 ## Syncing with upstream: the SOP
 
@@ -265,6 +305,11 @@ workflow cannot judge the things in step 4; a person or agent must.
      line it issues. Also read upstream's changes to the plugin SDK (`UsageSourceRegistration`,
      RPC timeouts), `usage/window-bar.tsx` (`runsOutAt`) and `usage/queries.ts`, the Add Project
      flow, `supervisor.ts` and the provider registry.
+   - **License and notices.** `git diff <old-base> upstream/main -- LICENSE NOTICE` must be empty
+     (anything else: read it, and stop if the license changed); then
+     `node wukong/scripts/license-audit.mjs --since <old-base>` lists the dependencies upstream
+     added to what we ship (exit 1 = a `blocked` one, do not take it as is; `review` = a person
+     decides). Check that nothing new bundles software with its own terms (rule 5 above).
    - Version bump? Check `pack-local` and the app config still accept the new version form.
 5. **Verify**, in the worktree: `node scripts/npm-retry.mjs ci --ignore-scripts`, `npm run postinstall`,
    `npm run build:server` (it also compiles `packages/server/scripts`), `npm run typecheck`,
@@ -301,6 +346,15 @@ Not verified, so do not claim otherwise:
   `GetUserStatus` is unofficial and may change.
 - The GitHub workflows (publish, sync, the Windows job) have never run on GitHub; nothing has been
   published to npm. `wukong/scripts/disable-upstream-workflows.sh` has not been run.
+- The package `@anthropic-ai/claude-agent-sdk` (and its platform binaries) is a runtime dependency
+  of `@wukong/server` under Anthropic's own terms ("SEE LICENSE IN ..."), not an open-source
+  license. npm installs it for the user; we do not redistribute it. The company's agreement with
+  Anthropic should cover using it. `license-audit.mjs` lists it as `review`; no other shipped
+  package is `review` or `blocked` (325 shipped packages checked from the lockfile's license
+  fields, which are what each package declares about itself).
+- No third-party license notices ship with the web UI bundle (the libraries compiled into it,
+  mostly MIT or Apache-2.0, ask for theirs to be kept). Upstream ships the same bundle; for any
+  distribution beyond the company we need a generated third-party notices file.
 - Third-party plugins are not covered by the guard (see above); only install ones you trust.
 - Claude usage is off (upstream's `claude-usage-source` is not enabled).
 - Settings has "Enable terminal agent hooks", which edits the user's agent config files. It is
